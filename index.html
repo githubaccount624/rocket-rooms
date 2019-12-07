@@ -16,6 +16,11 @@ h1, h2, h3, h4, h5, h6 {
 .room {
   flex: auto;
 }
+
+.join-room-label {
+  margin-top: 50px;
+  margin-bottom: 5px;
+}
 </style>
 </head>
 
@@ -37,20 +42,18 @@ h1, h2, h3, h4, h5, h6 {
     <div class="room" id="room1">
       <h2>#left</h2>
       <form class="new-message">
+        <input type="text" name="room" placeholder="Room" value="room1">
         <input type="text" name="message" placeholder="Message" value="Rocket is awesome!">
         <button type="submit">Send</button>
       </form>
       <div class="messages"></div>
     </div>
+  </div>
 
-    <div class="room" id="room2">
-      <h2>#right</h2>
-      <form class="new-message">
-        <input type="text" name="message" placeholder="Message">
-        <button type="submit">Send</button>
-      </form>
-      <div class="messages"></div>
-    </div>
+  <div>
+    <div class="join-room-label">Join a room</div>
+    <input type="text" name="room" placeholder="Room" value="room1">
+    <button class="join-room-button" type="submit">Join Room</button>
   </div>
 
 <script>
@@ -63,10 +66,33 @@ function subscribe(uri, dest) {
   }
 }
 
+function listen() {
+  const events = new EventSource("sse");
+
+  events.addEventListener("chat_message", function(event) {
+    const newElement = document.createElement("li");
+    newElement.innerHTML = "message: " + event.data;
+
+    console.log("message: " + event.data);
+
+    /*
+    const eventList = document.querySelector(".list");
+    eventList.appendChild(newElement);
+    */
+  });
+}
+
+listen();
+
 let randomUserID = Math.floor(Math.random() * 100) + 1; // this will be sent automatically with a cookie in practice
 
 subscribe("/room/left/" + randomUserID, document.getElementById("room1"));
-subscribe("/room/right/" + randomUserID, document.getElementById("room2"));
+
+document.querySelector(".join-room-button").addEventListener("click", function(e) {
+  e.preventDefault();
+
+  alert('asdf');
+});
 
 function listen_submit(form, uri) {
   form.addEventListener("submit", function(e) {
@@ -79,7 +105,6 @@ function listen_submit(form, uri) {
 
     const from = document.getElementById("input-user").value || "guest";
 
-    // TODO: ugly
     const body = "from=" + encodeURIComponent(from) + "&text=" + encodeURIComponent(message);
 
     fetch(uri, {
@@ -95,7 +120,6 @@ function listen_submit(form, uri) {
 }
 
 listen_submit(document.querySelector("#room1 .new-message"), "/room/left");
-listen_submit(document.querySelector("#room2 .new-message"), "/room/right");
 </script>
 </body>
 </html>

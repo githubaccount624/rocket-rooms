@@ -26,6 +26,12 @@ impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone, M> Rooms<R, U, M> {
         }
     }
 
+    /*
+    pub async fn get_stream(&self, user: U) -> Subscription<M> {
+        // have a hashmap of user to stream?
+    }
+    */
+
     pub async fn add_user(&self, room: &R, user: U) -> Subscription<M> {
         let (tx, rx) = mpsc::channel(10);
         {
