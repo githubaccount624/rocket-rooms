@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Rocket Rooms Demo</title>
+
+<style>
+h1, h2, h3, h4, h5, h6 {
+  font-family: Arial, sans-serif;
+}
+
+.rooms {
+  display: flex;
+}
+
+.room {
+  flex: auto;
+}
+</style>
+</head>
+
+<body>
+
+  <p>
+    Your Name: <input type="text" id="input-user" name="from">
+  </p>
+  <p>
+    Messages can be posted over HTTP:
+    <code>curl -d 'from=name&amp;text=message' localhost:8000/room/left</code>
+  </p>
+  <p>
+    Rooms can also be watched from the command line:
+    <code>curl localhost:8000/room/right</code>
+  </p>
+
+  <div class="rooms">
+    <div class="room" id="room1">
+      <h2>#left</h2>
+      <form class="new-message">
+        <input type="text" name="message" placeholder="Message" value="Rocket is awesome!">
+        <button type="submit">Send</button>
+      </form>
+      <div class="messages"></div>
+    </div>
+
+    <div class="room" id="room2">
+      <h2>#right</h2>
+      <form class="new-message">
+        <input type="text" name="message" placeholder="Message">
+        <button type="submit">Send</button>
+      </form>
+      <div class="messages"></div>
+    </div>
+  </div>
+
+<script>
+function subscribe(uri, dest) {
+  const events = new EventSource(uri);
+  events.onmessage = function(event) {
+    const p = document.createElement("p");
+    p.innerText = event.data;
+    dest.appendChild(p);
+  }
+}
+
+subscribe("/room/left", document.getElementById("room1"));
+subscribe("/room/right", document.getElementById("room2"));
+
+function listen_submit(form, uri) {
+  form.addEventListener("submit", function(e) {
+    e.preventDefault();
+
+    const message = form.elements["message"].value;
+    if (!message) {
+      return;
+    }
+
+    const from = document.getElementById("input-user").value || "guest";
+
+    // TODO: ugly
+    const body = "from=" + encodeURIComponent(from) + "&text=" + encodeURIComponent(message);
+
+    fetch(uri, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body
+    }).then(() => {
+      form.elements["message"].value = "";
+    });
+  });
+}
+
+listen_submit(document.querySelector("#room1 .new-message"), "/room/left");
+listen_submit(document.querySelector("#room2 .new-message"), "/room/right");
+</script>
+</body>
+</html>
