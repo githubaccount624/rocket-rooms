@@ -130,7 +130,7 @@ dependencies = [
 
 [[package]]
 name = "dashmap"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "crossbeam-utils 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -614,7 +614,7 @@ dependencies = [
 name = "rocket-rooms"
 version = "0.1.0"
 dependencies = [
- "dashmap 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dashmap 2.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-core-preview 0.3.0-alpha.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-util-preview 0.3.0-alpha.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocket 0.5.0-dev (git+https://github.com/SergioBenitez/Rocket?branch=async)",
@@ -1036,7 +1036,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum crossbeam-queue 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7c979cd6cfe72335896575c6b5688da489e420d36a27a0b9eb0c73db574b4a4b"
 "checksum crossbeam-utils 0.6.6 (registry+https://github.com/rust-lang/crates.io-index)" = "04973fa96e96579258a5091af6003abde64af786b860f18622b82e026cca60e6"
 "checksum crossbeam-utils 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ce446db02cdc3165b94ae73111e570793400d0794e46125cc4056c81cbb039f4"
-"checksum dashmap 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "1d05be5dddf860ea852aa2cf6023cb439d25af98b8301fbeadd448b1441a68e3"
+"checksum dashmap 2.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "698138343ebf3d26666aa4545664c60cd2ec10fa18b367b9df84cb54cb9bd3cc"
 "checksum dashmap-shard 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "c94b718728139bf8d0f822d63e0b65f4ed781562d5c28f6b84d8e1a66938ae70"
 "checksum devise 0.3.0 (git+https://github.com/SergioBenitez/Devise.git?rev=e58b3ac9a)" = "<none>"
 "checksum devise_codegen 0.3.0 (git+https://github.com/SergioBenitez/Devise.git?rev=e58b3ac9a)" = "<none>"

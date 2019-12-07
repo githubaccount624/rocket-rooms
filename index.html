@@ -63,8 +63,10 @@ function subscribe(uri, dest) {
   }
 }
 
-subscribe("/room/left", document.getElementById("room1"));
-subscribe("/room/right", document.getElementById("room2"));
+let randomUserID = Math.floor(Math.random() * 100) + 1; // this will be sent automatically with a cookie in practice
+
+subscribe("/room/left/" + randomUserID, document.getElementById("room1"));
+subscribe("/room/right/" + randomUserID, document.getElementById("room2"));
 
 function listen_submit(form, uri) {
   form.addEventListener("submit", function(e) {

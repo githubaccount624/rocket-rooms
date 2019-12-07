@@ -24,11 +24,9 @@ fn index() -> NamedFile {
 }
 
 #[get("/room/<room>/<user_id>")]
-async fn room_stream(room: String, user_id: i32, rooms: State<'_, Rooms<Message>>) -> sse::SSE {
+async fn room_stream(room: String, user_id: i32, rooms: State<'_, Rooms<String, i32, Message>>) -> sse::SSE {
     // Subscribe to the room. 'subscription' is a Stream of Messages.
-    let mut subscription = rooms.subscribe(&room, user_id).await;
-
-    // let mut new_subscription = rooms.new_subscribe(&room, user_id);
+    let mut subscription = rooms.add_user(&room, user_id).await;
 
     // Create the SSE stream
     sse::with_writer(|mut writer| async move {
@@ -49,14 +47,14 @@ async fn room_stream(room: String, user_id: i32, rooms: State<'_, Rooms<Message>
 }
 
 #[post("/room/<room>", data="<form>")]
-async fn post_message(room: String, form: Form<Message>, rooms: State<'_, Rooms<Message>>) {
+async fn post_message(room: String, form: Form<Message>, rooms: State<'_, Rooms<String, i32, Message>>) {
     // Send the message to the requested room
-    rooms.send(&room, form.into_inner()).await;
+    rooms.broadcast(&room, form.into_inner()).await;
 }
 
 fn main() {
     rocket::ignite()
-        .manage(Rooms::<Message>::new())
+        .manage(Rooms::<String, i32, Message>::new())
         .mount("/", routes![index, room_stream, post_message])
         .launch()
         .expect("server quit unexpectedly")
