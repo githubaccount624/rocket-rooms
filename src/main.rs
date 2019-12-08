@@ -31,7 +31,7 @@ type RoomType = Rooms<String, i32>;
 #[get("/sse/<user_id>")]
 async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
     // Subscribe to the room. 'subscription' is a Stream of Messages.
-    let mut subscription = rooms.get_or_create_stream(&user_id).await;
+    let mut subscription = rooms.create_stream(&user_id).await;
 
     // Create the SSE stream
     sse::with_writer(|mut writer| async move {
@@ -57,14 +57,13 @@ async fn join_room(room: String, user_id: i32, rooms: State<'_, RoomType>) {
 
 #[post("/room/<room>", data="<form>")]
 async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomType>) {
-
     let inner_form = form.into_inner();
 
     let formatted = format!("{}: {}", inner_form.from, inner_form.text);
 
-    let msg = sse::Event::new(Some(room.clone()), Some(formatted), Some("42".to_string()));
-
-    rooms.broadcast(&room, msg).await;
+    if let Some(msg) = sse::Event::new(Some(room.clone()), Some(formatted), Some("42".to_string())) {
+        rooms.broadcast(&room, msg).await;
+    }
 }
 
 fn main() {

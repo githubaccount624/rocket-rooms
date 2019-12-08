@@ -10,46 +10,30 @@ use tokio::io::{BufWriter, AsyncWrite, AsyncWriteExt};
 
 use super::io_channel::{io_channel, IoChannelReader, IoChannelWriter};
 
-
-// TODO: Comprehensive support for all possible message types and fields:
-//   * comments
-//   * 'retry' field
-//   * custom fields (ignored by EventSource API, but worth considering)
-/// A single SSE message, with optional `event`, `data`, and `id` fields.
 #[derive(Clone, Debug)]
 pub struct Event {
     event: Option<String>,
     data: Option<String>,
-    id: Option<String>
+    id: Option<String>,
+    // retry field?
 }
 
 impl Event {
-    /// Create a new Event with only the data field specified
-    pub fn data<S: Into<String>>(data: S) -> Self {
-        Self { event: None, id: None, data: Some(data.into()) }
-    }
-
-    // TODO: Result instead of panic!
     /// Create a new Event with event, data, and id all (optionally) specified
-    ///
-    /// # Panics
-    ///
-    /// Panics if either `event` or `id` contain newlines
-    pub fn new(event: Option<String>, data: Option<String>, id: Option<String>) -> Self {
+    pub fn new(event: Option<String>, data: Option<String>, id: Option<String>) -> Option<Self> {
         if event.as_ref().map_or(false, |e| e.find(|b| b == '\r' || b == '\n').is_some()) {
-            panic!("event cannot contain newlines");
+            return None;
         }
 
         if id.as_ref().map_or(false, |i| i.find(|b| b == '\r' || b == '\n').is_some()) {
-            panic!("id cannot contain newlines");
+            return None;
         }
 
-        Self { event, id, data }
+        Some(Self { event, id, data })
     }
 
-    /// Writes this event to a `writer` according in the EventStream
-    /// format
-    //TODO: Remove Unpin bound?
+    /// Writes this event to a `writer` according in the EventStream format
+    // TODO: Remove Unpin bound?
     pub async fn write_to<W: AsyncWrite + Unpin>(self, mut writer: W) -> Result<(), std::io::Error> {
         if let Some(event) = self.event {
             writer.write_all(b"event: ").await?;
@@ -101,24 +85,6 @@ impl<'r> Responder<'r> for SSE {
     }
 }
 
-/// Creates an SSE stream based on an [`SSEWriter`].
-///
-/// Typical usage:
-///
-/// ```rust
-/// # use rocket::get;
-/// #
-///
-/// use rocket_rooms::sse::{self, Event, SSE};
-/// #[get("/stream")]
-/// fn stream() -> SSE {
-///     sse::with_writer(|mut writer| async move {
-///         writer.send(Event::data("data1")).await.unwrap();
-///         writer.send(Event::data("data2")).await.unwrap();
-///         writer.send(Event::data("data3")).await.unwrap();
-///     })
-/// }
-/// ```
 pub fn with_writer<F, Fut>(func: F) -> SSE
 where
     F: FnOnce(SSEWriter) -> Fut,
