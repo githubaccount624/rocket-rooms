@@ -18,6 +18,8 @@ pub struct Event {
     // retry field?
 }
 
+// Use global incrementing atomic for id?
+
 impl Event {
     /// Create a new Event with event, data, and id all (optionally) specified
     pub fn new(event: Option<String>, data: Option<String>, id: Option<String>) -> Option<Self> {

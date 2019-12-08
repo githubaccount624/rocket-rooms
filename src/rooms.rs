@@ -14,11 +14,10 @@ use dashmap::DashMap;
 use std::hash::Hash;
 
 use std::collections::HashSet;
-use std::fmt::Display;
 
 use crate::sse::Event;
 
-pub struct Rooms<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> {
+pub struct Rooms<R: Eq + Hash + Clone, U: Eq + Hash + Clone> {
     rooms_to_users: DashMap<R, HashSet<U>>,
     users_to_subscriptions: DashMap<U, mpsc::Sender<Event>>,
     users_to_rooms: DashMap<U, HashSet<R>>
@@ -26,7 +25,7 @@ pub struct Rooms<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> {
 
 pub struct Subscription(mpsc::Receiver<Event>);
 
-impl<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> Rooms<R, U> {
+impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone> Rooms<R, U> {
     pub fn new() -> Self {
         Self {
             rooms_to_users: DashMap::new(),         // The users in this room
@@ -35,7 +34,7 @@ impl<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> Rooms<R, U> {
         }
     }
 
-    pub async fn create_stream(&self, user: &U) -> Subscription {
+    pub fn create_stream(&self, user: &U) -> Subscription {
         let (tx, rx) = mpsc::channel(10);
 
         self.users_to_subscriptions.insert(user.clone(), tx);
@@ -43,7 +42,7 @@ impl<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> Rooms<R, U> {
         Subscription(rx)
     }
 
-    pub async fn add_user(&self, room: &R, user: &U) {
+    pub fn add_user(&self, room: &R, user: &U) {
         let mut users_set = self.rooms_to_users.entry(room.clone()).or_insert(HashSet::new());
         users_set.insert(user.clone());
 
@@ -71,9 +70,7 @@ impl<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> Rooms<R, U> {
 
         return false;
     }
-}
 
-impl<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> Rooms<R, U> {
     pub async fn broadcast(&self, room: &R, message: Event) { 
         if let Some(room) = self.rooms_to_users.get(room) {
             let mut disconnects = vec![];

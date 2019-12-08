@@ -31,7 +31,7 @@ type RoomType = Rooms<String, i32>;
 #[get("/sse/<user_id>")]
 async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
     // Subscribe to the room. 'subscription' is a Stream of Messages.
-    let mut subscription = rooms.create_stream(&user_id).await;
+    let mut subscription = rooms.create_stream(&user_id);
 
     // Create the SSE stream
     sse::with_writer(|mut writer| async move {
@@ -50,10 +50,8 @@ async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
 
 #[post("/join_room/<room>/<user_id>")]
 async fn join_room(room: String, user_id: i32, rooms: State<'_, RoomType>) {
-    rooms.add_user(&room, &user_id).await;
+    rooms.add_user(&room, &user_id);
 }
-
-// Use global incrementing atomic for id?
 
 #[post("/room/<room>", data="<form>")]
 async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomType>) {
