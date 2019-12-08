@@ -13,47 +13,59 @@ use tokio::sync::{mpsc};
 use dashmap::DashMap;
 use std::hash::Hash;
 
-pub struct Rooms<R: Eq + Hash + Clone, U: Eq + Hash + Clone, M> {
-    subscriptions: DashMap<R, DashMap<U, mpsc::Sender<M>>>
+use std::collections::HashSet;
+use std::fmt::Display;
+
+use crate::sse::Event;
+
+pub struct Rooms<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> {
+    rooms_to_users: DashMap<R, HashSet<U>>,
+    users_to_subscriptions: DashMap<U, mpsc::Sender<Event>>, // Should this be the pair instead of the Sender only?
+    users_to_rooms: DashMap<U, HashSet<R>>
 }
 
-pub struct Subscription<M>(mpsc::Receiver<M>);
+pub struct Subscription(mpsc::Receiver<Event>);
 
-impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone, M> Rooms<R, U, M> {
+impl<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> Rooms<R, U> {
     pub fn new() -> Self {
         Self {
-            subscriptions: DashMap::new()
+            rooms_to_users: DashMap::new(), // The users in this room
+            users_to_subscriptions: DashMap::new(), // The mpsc sender for each user
+            users_to_rooms: DashMap::new() // The rooms this user belongs to
         }
     }
 
-    /*
-    pub async fn get_stream(&self, user: U) -> Subscription<M> {
-        // have a hashmap of user to stream?
-    }
-    */
-
-    pub async fn add_user(&self, room: &R, user: U) -> Subscription<M> {
+    // How to have it return the existing one if one already exists? (useful if client refreshes)
+    // Would need to save rx too, no? But don't we have to return the actual copy here?
+    pub async fn get_or_create_stream(&self, user: &U) -> Subscription {
         let (tx, rx) = mpsc::channel(10);
-        {
-            let room = self.subscriptions.entry(room.clone()).or_insert(DashMap::new());
-            room.insert(user, tx);
-        }
+
+        self.users_to_subscriptions.insert(user.clone(), tx);
+
         Subscription(rx)
     }
 
-    pub fn remove_user(&self, room: &R, user: U) -> Option<(U, mpsc::Sender<M>)> {
-        if let Some(room) = self.subscriptions.get_mut(room) {
-            return room.remove(&user);
-        }
+    pub async fn add_user(&self, room: &R, user: &U) {
+        let mut users_set = self.rooms_to_users.entry(room.clone()).or_insert(HashSet::new());
+        users_set.insert(user.clone());
 
-        return None;
-
-        // Question: Does the above automatically drop the MPSC associated with the user?
+        let mut rooms_set = self.users_to_rooms.entry(user.clone()).or_insert(HashSet::new());
+        rooms_set.insert(room.clone());
     }
 
-    pub fn contains_user(&self, room: &R, user: U) -> bool {
-        if let Some(room) = self.subscriptions.get_mut(room) {
-            return room.contains_key(&user);
+    pub fn remove_user(&self, room: &R, user: &U) {
+        if let Some(mut users_set) = self.rooms_to_users.get_mut(room) {
+            users_set.remove(&user);
+        }
+
+        if let Some(mut rooms_set) = self.users_to_rooms.get_mut(user) {
+            rooms_set.remove(&room);
+        }
+    }
+
+    pub fn contains_user(&self, room: &R, user: &U) -> bool {
+        if let Some(room) = self.rooms_to_users.get(room) {
+            return room.contains(&user);
         }
 
         // TODO: The above should remove the user if their connection is dropped
@@ -63,11 +75,20 @@ impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone, M> Rooms<R, U, M> {
     }
 }
 
-impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone, M: Clone> Rooms<R, U, M> {
-    pub async fn broadcast(&self, room: &R, message: M) { 
-        if let Some(room) = self.subscriptions.get_mut(room) {
-            let mut disconnects = vec![];
+impl<R: Eq + Hash + Clone + Display, U: Eq + Hash + Clone> Rooms<R, U> {
+    pub async fn broadcast(&self, room: &R, message: Event) { 
+        if let Some(room) = self.rooms_to_users.get(room) {
+            // let mut disconnects = vec![];
 
+            for user in room.iter() {
+                if let Some(mut sender) = self.users_to_subscriptions.get_mut(user) {
+                    if sender.send(message.clone()).await.is_err() {
+                        // Disconnected client. Remove from hashmaps
+                    }
+                }
+            }
+
+            /*
             for mut kv in &mut room.iter_mut() {
                 if kv.value_mut().send(message.clone()).await.is_err() {
                     disconnects.push(kv.key().clone());
@@ -77,12 +98,13 @@ impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone, M: Clone> Rooms<R, U, M> {
             for user in disconnects {
                 room.remove(&user);
             }
+            */
         }
     }
 }
 
-impl<M> Stream for Subscription<M> {
-    type Item = M;
+impl Stream for Subscription {
+    type Item = Event;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.0).poll_next(cx)

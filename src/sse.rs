@@ -10,16 +10,17 @@ use tokio::io::{BufWriter, AsyncWrite, AsyncWriteExt};
 
 use super::io_channel::{io_channel, IoChannelReader, IoChannelWriter};
 
+
 // TODO: Comprehensive support for all possible message types and fields:
 //   * comments
 //   * 'retry' field
 //   * custom fields (ignored by EventSource API, but worth considering)
 /// A single SSE message, with optional `event`, `data`, and `id` fields.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Event {
     event: Option<String>,
-    id: Option<String>,
     data: Option<String>,
+    id: Option<String>
 }
 
 impl Event {

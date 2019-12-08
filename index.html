@@ -17,9 +17,18 @@ h1, h2, h3, h4, h5, h6 {
   flex: auto;
 }
 
-.join-room-label {
+.form-label {
   margin-top: 50px;
   margin-bottom: 5px;
+  font-weight: bold;
+  font-size: 24px;
+}
+
+.room-container {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin-top: 10px;
 }
 </style>
 </head>
@@ -29,97 +38,91 @@ h1, h2, h3, h4, h5, h6 {
   <p>
     Your Name: <input type="text" id="input-user" name="from">
   </p>
-  <p>
-    Messages can be posted over HTTP:
-    <code>curl -d 'from=name&amp;text=message' localhost:8000/room/left</code>
-  </p>
-  <p>
-    Rooms can also be watched from the command line:
-    <code>curl localhost:8000/room/right</code>
-  </p>
+
+  <div>
+    <div class="form-label">Join a room</div>
+    <input class="join-room-text" type="text" name="room" placeholder="Room" value="room1">
+    <button class="join-room-button" type="submit">Join Room</button>
+  </div>
 
   <div class="rooms">
     <div class="room" id="room1">
-      <h2>#left</h2>
-      <form class="new-message">
-        <input type="text" name="room" placeholder="Room" value="room1">
-        <input type="text" name="message" placeholder="Message" value="Rocket is awesome!">
-        <button type="submit">Send</button>
-      </form>
+      <div class="form-label">Send Message To:</div>
+      <input type="text" class="room-name-text" name="room" placeholder="Room" value="room1">
+      <input type="text" class="send-message-text" name="message" placeholder="Message" value="Rocket is awesome!">
+      <button class="send-message-button" type="submit">Send</button>
       <div class="messages"></div>
     </div>
   </div>
 
-  <div>
-    <div class="join-room-label">Join a room</div>
-    <input type="text" name="room" placeholder="Room" value="room1">
-    <button class="join-room-button" type="submit">Join Room</button>
-  </div>
+  <div class="room-chats"></div>
 
 <script>
-function subscribe(uri, dest) {
-  const events = new EventSource(uri);
-  events.onmessage = function(event) {
-    const p = document.createElement("p");
-    p.innerText = event.data;
-    dest.appendChild(p);
-  }
-}
 
-function listen() {
-  const events = new EventSource("sse");
+let randomUserID = Math.floor(Math.random() * 100000) + 1; // this will be sent automatically with a cookie in practice
 
-  events.addEventListener("chat_message", function(event) {
-    const newElement = document.createElement("li");
-    newElement.innerHTML = "message: " + event.data;
+const events = new EventSource("/sse/" + randomUserID);
 
-    console.log("message: " + event.data);
+function joinRoom(eventType) {
 
-    /*
-    const eventList = document.querySelector(".list");
-    eventList.appendChild(newElement);
-    */
+  const div = document.createElement("div");
+  div.innerText = eventType;
+  div.className = "room-container";
+  let newChatContainer = document.querySelector(".room-chats").appendChild(div);
+
+  console.log(eventType);
+
+  fetch("join_room/" + eventType + "/" + randomUserID, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    }
+  }).then(() => {
+    events.addEventListener(eventType, event => {
+      console.log(event);
+
+      const newElement = document.createElement("li");
+      newElement.innerHTML = "message: " + event.data;
+
+      newChatContainer.appendChild(newElement);
+
+      console.log("message: " + event.data);
+    });
   });
+
+
 }
 
-listen();
-
-let randomUserID = Math.floor(Math.random() * 100) + 1; // this will be sent automatically with a cookie in practice
-
-subscribe("/room/left/" + randomUserID, document.getElementById("room1"));
 
 document.querySelector(".join-room-button").addEventListener("click", function(e) {
   e.preventDefault();
 
-  alert('asdf');
+  let roomName = document.querySelector(".join-room-text").value;
+
+  joinRoom(roomName);
 });
 
-function listen_submit(form, uri) {
-  form.addEventListener("submit", function(e) {
-    e.preventDefault();
+document.querySelector(".send-message-button").addEventListener("click", function(e) {
+  const message = document.querySelector(".send-message-text").value;
+  if (!message) { return; }
 
-    const message = form.elements["message"].value;
-    if (!message) {
-      return;
-    }
+  const from = document.querySelector("#input-user").value || "guest";
 
-    const from = document.getElementById("input-user").value || "guest";
+  const body = "from=" + encodeURIComponent(from) + "&text=" + encodeURIComponent(message);
 
-    const body = "from=" + encodeURIComponent(from) + "&text=" + encodeURIComponent(message);
+  const roomName = document.querySelector(".room-name-text").value || "roomname1";
 
-    fetch(uri, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body
-    }).then(() => {
-      form.elements["message"].value = "";
-    });
+  fetch("room/" + roomName, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body
+  }).then(() => {
+    document.querySelector(".send-message-text").value = "";
   });
-}
+});
 
-listen_submit(document.querySelector("#room1 .new-message"), "/room/left");
 </script>
 </body>
 </html>
