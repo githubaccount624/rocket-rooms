@@ -33,16 +33,10 @@ async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
     // Subscribe to the room. 'subscription' is a Stream of Messages.
     let mut subscription = rooms.create_stream(&user_id);
 
-    // Create the SSE stream
     sse::with_writer(|mut writer| async move {
-        loop {
-            // Asynchronously get the next message from the room
-            let event = subscription.next().await.expect("rooms can't 'close'");
-
-            // Send the message to the client
+        while let Some(event) = subscription.next().await { 
             if let Err(_) = writer.send(event).await {
-                // An error usually (TODO: always?) means the client has disconnected
-                break;
+                break; // An error usually (TODO: always?) means the client has disconnected
             }
         }
     })
