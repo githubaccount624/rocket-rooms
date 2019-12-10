@@ -1,7 +1,3 @@
-//! An SSE Responder.
-//!
-//! This module might be suitable for inclusion in rocket_contrib.
-
 use std::future::Future;
 
 use rocket::request::Request;
@@ -13,25 +9,13 @@ use super::io_channel::{io_channel, IoChannelReader, IoChannelWriter};
 #[derive(Clone, Debug)]
 pub struct Event {
     event: Option<String>,
-    data: Option<String>,
-    id: Option<String>,
-    // retry field?
+    data: String,
+    // retry field? id field?
 }
 
-// Use global incrementing atomic for id?
-
 impl Event {
-    /// Create a new Event with event, data, and id all (optionally) specified
-    pub fn new(event: Option<String>, data: Option<String>, id: Option<String>) -> Option<Self> {
-        if event.as_ref().map_or(false, |e| e.find(|b| b == '\r' || b == '\n').is_some()) {
-            return None;
-        }
-
-        if id.as_ref().map_or(false, |i| i.find(|b| b == '\r' || b == '\n').is_some()) {
-            return None;
-        }
-
-        Some(Self { event, id, data })
+    pub fn new(event: Option<String>, data: String) -> Option<Self> {
+        Some(Self { event, data })
     }
 
     /// Writes this event to a `writer` according in the EventStream format
@@ -42,18 +26,13 @@ impl Event {
             writer.write_all(event.as_bytes()).await?;
             writer.write_all(b"\n").await?;
         }
-        if let Some(id) = self.id {
-            writer.write_all(b"id: ").await?;
-            writer.write_all(id.as_bytes()).await?;
+
+        for line in self.data.lines() {
+            writer.write_all(b"data: ").await?;
+            writer.write_all(line.as_bytes()).await?;
             writer.write_all(b"\n").await?;
         }
-        if let Some(data) = self.data {
-            for line in data.lines() {
-                writer.write_all(b"data: ").await?;
-                writer.write_all(line.as_bytes()).await?;
-                writer.write_all(b"\n").await?;
-            }
-        }
+
         writer.write_all(b"\n").await?;
         Ok(())
     }

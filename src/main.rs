@@ -24,7 +24,6 @@ fn index() -> NamedFile {
 }
 
 // Can also use SocketAddr for key instead of i32 user id
-// use std::net::{SocketAddr};
 
 type RoomType = Rooms<String, i32>;
 
@@ -53,7 +52,7 @@ async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomTy
 
     let formatted = format!("{}: {}", inner_form.from, inner_form.text);
 
-    if let Some(msg) = sse::Event::new(Some(room.clone()), Some(formatted), Some("42".to_string())) {
+    if let Some(msg) = sse::Event::new(Some(room.clone()), formatted) {
         rooms.broadcast(&room, msg).await;
     }
 } 
