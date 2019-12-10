@@ -81,6 +81,8 @@ impl<'r> Responder<'r> for SSE {
         Box::pin(async move {
             Response::build()
                 .raw_header("Content-Type", "text/event-stream")
+                .raw_header("Cache-Control", "no-transform") // no-cache
+                .raw_header("Connection", "keep-alive")
                 .streamed_body(self.0)
                 .ok()
         })

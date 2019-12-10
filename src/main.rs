@@ -62,7 +62,7 @@ async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomTy
     if let Some(msg) = sse::Event::new(Some(room.clone()), Some(formatted), Some("42".to_string())) {
         rooms.broadcast(&room, msg).await;
     }
-}
+} 
 
 fn main() {
     rocket::ignite()

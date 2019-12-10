@@ -17,7 +17,9 @@ use std::collections::HashSet;
 
 use crate::sse::Event;
 
-pub struct Rooms<R: Eq + Hash + Clone, U: Eq + Hash + Clone> {
+use core::fmt::Debug;
+
+pub struct Rooms<R: Eq + Hash + Clone, U: Eq + Hash + Clone + Debug> {
     rooms_to_users: DashMap<R, HashSet<U>>,
     users_to_subscriptions: DashMap<U, mpsc::Sender<Event>>,
     users_to_rooms: DashMap<U, HashSet<R>>
@@ -25,7 +27,7 @@ pub struct Rooms<R: Eq + Hash + Clone, U: Eq + Hash + Clone> {
 
 pub struct Subscription(mpsc::Receiver<Event>);
 
-impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone> Rooms<R, U> {
+impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone + Debug> Rooms<R, U> {
     pub fn new() -> Self {
         Self {
             rooms_to_users: DashMap::new(),         // The users in this room
@@ -45,7 +47,6 @@ impl<R: Eq + Hash + Clone, U: Eq + Hash + Clone> Rooms<R, U> {
     pub fn add_user(&self, room: &R, user: &U) {
         let mut users_set = self.rooms_to_users.entry(room.clone()).or_insert(HashSet::new());
         users_set.insert(user.clone());
-
         let mut rooms_set = self.users_to_rooms.entry(user.clone()).or_insert(HashSet::new());
         rooms_set.insert(room.clone());
     }
