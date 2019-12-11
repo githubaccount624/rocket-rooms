@@ -36,7 +36,7 @@ impl AsyncWrite for IoChannelWriter {
 
         // Send the buffer
         // TODO: to_vec() SAD
-        Pin::new(&mut self.tx).send(buf.to_vec()); //.expect("poll_ready lied :(");
+        Pin::new(&mut self.tx).try_send(buf.to_vec()).expect("poll_ready lied :(");
 
         // Report the whole buffer as being written
         Poll::Ready(Ok(buf.len()))
