@@ -11,8 +11,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::prelude::Sink;
-use tokio::stream::Stream;
 use tokio::sync::mpsc;
 
 pub struct IoChannelWriter {
@@ -38,7 +36,7 @@ impl AsyncWrite for IoChannelWriter {
 
         // Send the buffer
         // TODO: to_vec() SAD
-        Pin::new(&mut self.tx).start_send(buf.to_vec()).expect("poll_ready lied :(");
+        Pin::new(&mut self.tx).send(buf.to_vec()); //.expect("poll_ready lied :(");
 
         // Report the whole buffer as being written
         Poll::Ready(Ok(buf.len()))
@@ -66,7 +64,7 @@ impl AsyncRead for IoChannelReader {
             match &mut self.state {
                 ReaderState::Pending => {
                     // Get the next buffer
-                    match futures_core::ready!(Pin::new(&mut self.rx).poll_next(cx)) {
+                    match futures_core::ready!(Pin::new(&mut self.rx).poll_recv(cx)) {
                         Some(next_buf) => self.state = ReaderState::Partial(Cursor::new(next_buf)),
                         None => self.state = ReaderState::Done,
                     }

@@ -6,8 +6,8 @@
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use futures::stream::Stream;
 
-use tokio::stream::Stream;
 use tokio::sync::{mpsc};
 
 use dashmap::DashMap;
@@ -104,6 +104,6 @@ impl Stream for Subscription {
     type Item = Event;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.0).poll_next(cx)
+        Pin::new(&mut self.0).poll_recv(cx)
     }
 }
