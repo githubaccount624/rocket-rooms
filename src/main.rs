@@ -11,6 +11,8 @@ use rocket::response::NamedFile;
 use rocket_rooms::sse;
 use rocket_rooms::rooms::Rooms;
 
+use tokio;
+
 #[derive(rocket::FromForm)]
 #[derive(Clone)]
 struct Message {
@@ -57,10 +59,11 @@ async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomTy
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     rocket::ignite()
-        // .manage(RoomType::new())
-        .mount("/", routes![index/*, room_stream, join_room, post_message*/])
+        .manage(RoomType::new())
+        .mount("/", routes![index, room_stream, join_room, post_message])
         .launch()
         .expect("server quit unexpectedly")
 }

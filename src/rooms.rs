@@ -31,24 +31,24 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
         Rooms { tx }
     }
 
-    pub async fn subscribe(&mut self, user: U) -> Subscription {
+    pub async fn subscribe(&self, user: U) -> Subscription {
         let (tx, rx) = mpsc::channel(10);
 
-        self.tx.send(Command::Subscribe { user, tx }).await;
+        self.tx.clone().send(Command::Subscribe { user, tx }).await;
 
         Subscription(rx)
     }
 
-    pub async fn join(&mut self, room: R, user: U) {
-        self.tx.send(Command::Join { room, user }).await;
+    pub async fn join(&self, room: R, user: U) {
+        self.tx.clone().send(Command::Join { room, user }).await;
     }
 
-    pub async fn leave(&mut self, room: R, user: U) {
-        self.tx.send(Command::Leave { room, user }).await;
+    pub async fn leave(&self, room: R, user: U) {
+        self.tx.clone().send(Command::Leave { room, user }).await;
     }
 
-    pub async fn send(&mut self, room: R, message: Event) {
-        self.tx.send(Command::SendMessage { room, message }).await;
+    pub async fn send(&self, room: R, message: Event) {
+        self.tx.clone().send(Command::SendMessage { room, message }).await;
     }
     
     fn helper_subscribe(users_to_subscriptions: &mut HashMap<U, mpsc::Sender<Event>>, user: &U, tx: mpsc::Sender<Event>) {
