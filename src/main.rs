@@ -45,7 +45,7 @@ async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
 
 #[post("/join_room/<room>/<user_id>")]
 async fn join_room(room: String, user_id: i32, rooms: State<'_, RoomType>) {
-    rooms.join(room, user_id);
+    rooms.join(room, user_id).await;
 }
 
 #[post("/room/<room>", data="<form>")]
@@ -64,6 +64,6 @@ async fn main() {
     rocket::ignite()
         .manage(RoomType::new())
         .mount("/", routes![index, room_stream, join_room, post_message])
-        .serve().await;
-        // .expect("server quit unexpectedly")
+        .serve().await
+        .expect("server quit unexpectedly")
 }
