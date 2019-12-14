@@ -58,19 +58,19 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
     }
 
     fn helper_join(rooms_to_users: &mut HashMap<R, HashSet<U>>, users_to_rooms: &mut HashMap<U, HashSet<R>>, room: &R, user: &U) {
-        let mut users_set = rooms_to_users.entry(room.clone()).or_insert(HashSet::new());
+        let users_set = rooms_to_users.entry(room.clone()).or_insert(HashSet::new());
         users_set.insert(user.clone());
 
-        let mut rooms_set = users_to_rooms.entry(user.clone()).or_insert(HashSet::new());
+        let rooms_set = users_to_rooms.entry(user.clone()).or_insert(HashSet::new());
         rooms_set.insert(room.clone());
     }
 
     fn helper_leave(rooms_to_users: &mut HashMap<R, HashSet<U>>, users_to_rooms: &mut HashMap<U, HashSet<R>>, room: &R, user: &U) {
-        if let Some(mut users_set) = rooms_to_users.get_mut(room) {
+        if let Some(users_set) = rooms_to_users.get_mut(room) {
             users_set.remove(user);
         }
 
-        if let Some(mut rooms_set) = users_to_rooms.get_mut(user) {
+        if let Some(rooms_set) = users_to_rooms.get_mut(user) {
             rooms_set.remove(room);
         }
     }
@@ -80,7 +80,7 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
         
         if let Some(room) = rooms_to_users.get(room) {
             for user in room.iter() {
-                if let Some(mut sender) = users_to_subscriptions.get_mut(user) {
+                if let Some(sender) = users_to_subscriptions.get_mut(user) {
                     if sender.send(message.clone()).await.is_err() {
                         disconnects.push(user.clone());
                     }
@@ -94,7 +94,7 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
 
             if let Some(member_rooms) = users_to_rooms.remove(&user) {
                 for r in member_rooms.iter() {
-                    if let Some(mut the_room) = rooms_to_users.get_mut(r) {
+                    if let Some(the_room) = rooms_to_users.get_mut(r) {
                         the_room.remove(&user);
                     }
                 }
@@ -120,9 +120,6 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
                 }
                 Command::SendMessage { room, message } => {
                     Self::helper_send(&mut users_to_subscriptions, &mut rooms_to_users, &mut users_to_rooms, &room, message).await;
-                }
-                _ => {
-                    todo!()
                 }
             }
         }
