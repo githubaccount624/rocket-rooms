@@ -30,7 +30,7 @@ type RoomType = Rooms<String, i32>;
 #[get("/sse/<user_id>")]
 async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
     // Subscribe to the room. 'subscription' is a Stream of Messages.
-    let mut subscription = rooms.create_stream(&user_id);
+    let mut subscription = rooms.subscribe(user_id).await;
 
     sse::with_writer(|mut writer| async move {
         while let Some(event) = subscription.next().await { 
@@ -43,7 +43,7 @@ async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
 
 #[post("/join_room/<room>/<user_id>")]
 async fn join_room(room: String, user_id: i32, rooms: State<'_, RoomType>) {
-    rooms.add_user(&room, &user_id);
+    rooms.join(room, user_id);
 }
 
 #[post("/room/<room>", data="<form>")]
@@ -53,14 +53,14 @@ async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomTy
     let formatted = format!("{}: {}", inner_form.from, inner_form.text);
 
     if let Some(msg) = sse::Event::new(Some(room.clone()), formatted) {
-        rooms.broadcast(&room, msg).await;
+        rooms.send(room, msg).await;
     }
-} 
+}
 
 fn main() {
     rocket::ignite()
-        .manage(RoomType::new())
-        .mount("/", routes![index, room_stream, join_room, post_message])
+        // .manage(RoomType::new())
+        .mount("/", routes![index/*, room_stream, join_room, post_message*/])
         .launch()
         .expect("server quit unexpectedly")
 }
