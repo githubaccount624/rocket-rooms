@@ -24,6 +24,8 @@ enum Command<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Has
 
 pub struct Subscription(mpsc::Receiver<Event>);
 
+// const TASK_SHUTDOWN_ERROR_MESSAGE = "permanent background task was shut down unexpectedly"
+
 impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clone + Send + Sync> Rooms<R, U> {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel(1024); // what number?
@@ -74,9 +76,9 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
     }
 
     async fn helper_send(users_to_subscriptions: &mut HashMap<U, mpsc::Sender<Event>>, rooms_to_users: &mut HashMap<R, HashSet<U>>, users_to_rooms: &mut HashMap<U, HashSet<R>>, room: &R, message: Event) { 
+        let mut disconnects = vec![];
+        
         if let Some(room) = rooms_to_users.get(room) {
-            let mut disconnects = vec![];
-
             for user in room.iter() {
                 if let Some(mut sender) = users_to_subscriptions.get_mut(user) {
                     if sender.send(message.clone()).await.is_err() {
@@ -84,21 +86,19 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
                     }
                 }
             }
+        }
 
-            /* got some borrow errors so commenting out in the meantime
-            // Remove any disconnects from hashmaps
-            for user in disconnects {
-                users_to_subscriptions.remove(user);
+        // Remove any disconnects from hashmaps
+        for user in disconnects {
+            users_to_subscriptions.remove(&user.clone());
 
-                if let Some(member_rooms) = users_to_rooms.remove(user) {
-                    for r in member_rooms.iter() {
-                        if let Some(mut the_room) = rooms_to_users.get_mut(r) {
-                            the_room.remove(user);
-                        }
+            if let Some(member_rooms) = users_to_rooms.remove(user) {
+                for r in member_rooms.iter() {
+                    if let Some(mut the_room) = rooms_to_users.get_mut(r) {
+                        the_room.remove(user);
                     }
                 }
             }
-            */
         }
     }
 
