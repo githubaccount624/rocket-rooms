@@ -82,7 +82,7 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
             for user in room.iter() {
                 if let Some(mut sender) = users_to_subscriptions.get_mut(user) {
                     if sender.send(message.clone()).await.is_err() {
-                        disconnects.push(user);
+                        disconnects.push(user.clone());
                     }
                 }
             }
@@ -90,12 +90,12 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
 
         // Remove any disconnects from hashmaps
         for user in disconnects {
-            users_to_subscriptions.remove(&user.clone());
+            users_to_subscriptions.remove(&user);
 
-            if let Some(member_rooms) = users_to_rooms.remove(user) {
+            if let Some(member_rooms) = users_to_rooms.remove(&user) {
                 for r in member_rooms.iter() {
                     if let Some(mut the_room) = rooms_to_users.get_mut(r) {
-                        the_room.remove(user);
+                        the_room.remove(&user);
                     }
                 }
             }
