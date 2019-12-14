@@ -64,6 +64,6 @@ async fn main() {
     rocket::ignite()
         .manage(RoomType::new())
         .mount("/", routes![index, room_stream, join_room, post_message])
-        .launch()
-        .expect("server quit unexpectedly")
+        .serve().await;
+        // .expect("server quit unexpectedly")
 }
