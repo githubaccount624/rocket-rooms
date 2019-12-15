@@ -11,8 +11,6 @@ use rocket::response::NamedFile;
 use rocket_rooms::sse;
 use rocket_rooms::rooms::Rooms;
 
-use tokio;
-
 use futures_util::stream::Stream;
 
 #[derive(rocket::FromForm)]

@@ -19,7 +19,8 @@ enum Command<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Has
     Subscribe { user: U, tx: mpsc::Sender<Event> },
     Join { user: U, room: R },
     Leave { user: U, room: R },
-    SendMessage { room: R, message: Event }
+    SendMessage { room: R, message: Event },
+    Contains { user: U, room: R, cb: Box<dyn FnOnce(bool)> }
 }
 
 pub struct Subscription(mpsc::Receiver<Event>);
@@ -51,6 +52,10 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
 
     pub async fn send(&self, room: R, message: Event) {
         self.tx.clone().send(Command::SendMessage { room, message }).await;
+    }
+
+    pub async fn contains<F>(&self, room: R, user: U, cb: Box<dyn FnOnce(bool)>) {
+        self.tx.clone().send(Command::Contains { room, user, cb }).await;
     }
     
     fn helper_subscribe(users_to_subscriptions: &mut HashMap<U, mpsc::Sender<Event>>, user: &U, tx: mpsc::Sender<Event>) {
@@ -100,6 +105,20 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
                 }
             }
         }
+    }    
+
+    async fn helper_contains<F>(rooms_to_users: &HashMap<R, HashSet<U>>, room: &R, user: &U, cb: Box<dyn FnOnce(bool)>) { 
+        if let Some(room) = rooms_to_users.get(room) {
+            cb(room.contains(&user));
+            // return room.contains(&user);
+        }
+
+        cb(false);
+
+        // TODO: The above should remove the user if their connection is dropped
+        // Not sure how to do this other than sending a dummy message and seeing if it sent?
+
+        // return false;
     }
 
     async fn background_task(mut rx: mpsc::Receiver<Command<R, U>>) {
@@ -120,6 +139,9 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
                 }
                 Command::SendMessage { room, message } => {
                     Self::helper_send(&mut users_to_subscriptions, &mut rooms_to_users, &mut users_to_rooms, &room, message).await;
+                }
+                Command::Contains { room, user, cb } => {
+                    Self::helper_contains(&rooms_to_users, &room, &user, cb).await;
                 }
             }
         }
