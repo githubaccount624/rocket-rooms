@@ -110,15 +110,12 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
     async fn helper_contains<F>(rooms_to_users: &HashMap<R, HashSet<U>>, room: &R, user: &U, cb: Box<dyn FnOnce(bool)>) { 
         if let Some(room) = rooms_to_users.get(room) {
             cb(room.contains(&user));
-            // return room.contains(&user);
         }
 
         cb(false);
 
         // TODO: The above should remove the user if their connection is dropped
         // Not sure how to do this other than sending a dummy message and seeing if it sent?
-
-        // return false;
     }
 
     async fn background_task(mut rx: mpsc::Receiver<Command<R, U>>) {
