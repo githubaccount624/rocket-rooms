@@ -12,8 +12,6 @@ use std::future::Future;
 
 use tokio::io::{BufWriter, AsyncWrite, AsyncWriteExt};
 
-// use super::io_channel::{io_channel, IoChannelReader, IoChannelWriter};
-
 #[derive(Clone, Debug)]
 pub struct Event {
     event: Option<String>,
@@ -57,7 +55,6 @@ pub fn from_stream<S: Stream<Item=Event>>(stream: S) -> SSE<S> {
     SSE(stream)
 }
 
-// TODO: Cache-Control header?
 impl<'r, S: Stream<Item=Event> + Send + 'r> Responder<'r> for SSE<S> {
     fn respond_to(self, _req: &'r Request<'_>) -> ResultFuture<'r> {
         Box::pin(async move {
