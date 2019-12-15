@@ -44,7 +44,15 @@ async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE<impl 
 
 #[post("/join_room/<room>/<user_id>")]
 async fn join_room(room: String, user_id: i32, rooms: State<'_, RoomType>) {
-    rooms.join(room, user_id).await;
+    rooms.contains(room.clone(), user_id, Box::new(|member| { 
+        println!("member: {}", member);
+    })).await;
+
+    rooms.join(room.clone(), user_id).await;
+
+    rooms.contains(room, user_id, Box::new(|member| { 
+        println!("member: {}", member);
+    })).await;
 }
 
 #[post("/room/<room>", data="<form>")]

@@ -20,7 +20,7 @@ enum Command<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Has
     Join { user: U, room: R },
     Leave { user: U, room: R },
     SendMessage { room: R, message: Event },
-    Contains { user: U, room: R, cb: Box<dyn FnOnce(bool)> }
+    Contains { user: U, room: R, cb: Box<dyn FnOnce(bool) + Send + 'static> }
 }
 
 pub struct Subscription(mpsc::Receiver<Event>);
@@ -54,7 +54,7 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
         self.tx.clone().send(Command::SendMessage { room, message }).await;
     }
 
-    pub async fn contains<F>(&self, room: R, user: U, cb: Box<dyn FnOnce(bool)>) {
+    pub async fn contains(&self, room: R, user: U, cb: Box<dyn FnOnce(bool) + Send + 'static>) {
         self.tx.clone().send(Command::Contains { room, user, cb }).await;
     }
     
@@ -107,9 +107,11 @@ impl<R: 'static + Eq + Hash + Clone + Send + Sync, U: 'static + Eq + Hash + Clon
         }
     }    
 
-    async fn helper_contains<F>(rooms_to_users: &HashMap<R, HashSet<U>>, room: &R, user: &U, cb: Box<dyn FnOnce(bool)>) { 
+    async fn helper_contains<'a>(rooms_to_users: &'a HashMap<R, HashSet<U>>, room: &'a R, user: &'a U, cb: Box<dyn FnOnce(bool) + Send + 'static>) { 
         if let Some(room) = rooms_to_users.get(room) {
             cb(room.contains(&user));
+            
+            return;
         }
 
         cb(false);
