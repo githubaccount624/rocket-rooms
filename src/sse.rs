@@ -10,17 +10,13 @@ use tokio::io::AsyncRead;
 
 #[derive(Clone, Debug)]
 pub struct Event {
-    serialized: Vec<u8>
+    pub serialized: Vec<u8>
     // event, data, retry, and id fields
 }
 
 impl Event {
     pub fn new(event: Option<String>, data: String) -> Option<Self> {
         Some(Self { serialized: Self::serialize(event, data) })
-    }
-
-    pub fn clone_serialized(&self) -> Vec<u8> {
-        self.serialized.clone()
     }
 
     fn serialize(event: Option<String>, data: String) -> Vec<u8> {
@@ -91,7 +87,7 @@ impl<S: Stream<Item=Event>> AsyncRead for SSEReader<S> {
                     // Get the next buffer
                     match this.stream.as_mut().poll_next(cx) {
                         Poll::Pending => return Poll::Pending,
-                        Poll::Ready(Some(next_event)) => *this.state = State::Partial(Cursor::new(next_event.clone_serialized())),
+                        Poll::Ready(Some(next_event)) => *this.state = State::Partial(Cursor::new(next_event.serialized)),
                         Poll::Ready(None) => *this.state = State::Done,
                     }
                 },
