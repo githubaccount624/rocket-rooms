@@ -8,36 +8,31 @@ use rocket::request::Request;
 use rocket::response::{Responder, Response, ResultFuture};
 use tokio::io::AsyncRead;
 
-use std::future::Future;
-
-use tokio::io::{BufWriter, AsyncWrite, AsyncWriteExt};
-
 #[derive(Clone, Debug)]
 pub struct Event {
-    event: Option<String>,
-    data: String,
-    // retry field? id field?
+    serialized: Vec<u8>
+    // event, data, retry, and id fields
 }
 
 impl Event {
     pub fn new(event: Option<String>, data: String) -> Option<Self> {
-        Some(Self { event, data })
+        Some(Self { serialized: Self::serialize(event, data) })
     }
 
-    pub async fn write_to<W: AsyncWrite + Unpin>(self, mut writer: W) -> Result<(), std::io::Error> {
-        writer.write_all(&self.serialize()).await
+    pub fn clone_serialized(&self) -> Vec<u8> {
+        self.serialized.clone()
     }
 
-    pub fn serialize(self) -> Vec<u8> {
-        let mut vec = vec![];
+    fn serialize(event: Option<String>, data: String) -> Vec<u8> {
+        let mut vec = Vec::with_capacity(6); // minimum size for an SSE message
 
-        if let Some(event) = self.event {
+        if let Some(event) = event {
             vec.extend(b"event: ");
             vec.extend(event.into_bytes());
             vec.extend(b"\n");
         }
 
-        for line in self.data.lines() {
+        for line in data.lines() {
             vec.extend(b"data: ");
             vec.extend(line.as_bytes());
             vec.extend(b"\n");
@@ -96,7 +91,7 @@ impl<S: Stream<Item=Event>> AsyncRead for SSEReader<S> {
                     // Get the next buffer
                     match this.stream.as_mut().poll_next(cx) {
                         Poll::Pending => return Poll::Pending,
-                        Poll::Ready(Some(next_event)) => *this.state = State::Partial(Cursor::new(next_event.serialize())),
+                        Poll::Ready(Some(next_event)) => *this.state = State::Partial(Cursor::new(next_event.clone_serialized())),
                         Poll::Ready(None) => *this.state = State::Done,
                     }
                 },
