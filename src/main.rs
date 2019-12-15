@@ -13,6 +13,8 @@ use rocket_rooms::rooms::Rooms;
 
 use tokio;
 
+use futures_util::stream::Stream;
+
 #[derive(rocket::FromForm)]
 #[derive(Clone)]
 struct Message {
@@ -30,17 +32,16 @@ fn index() -> NamedFile {
 type RoomType = Rooms<String, i32>;
 
 #[get("/sse/<user_id>")]
-async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE {
-    // Subscribe to the room. 'subscription' is a Stream of Messages.
+async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE<impl Stream<Item = sse::Event>> {
     let mut subscription = rooms.subscribe(user_id).await;
 
-    sse::with_writer(|mut writer| async move {
-        while let Some(event) = subscription.next().await { 
-            if let Err(_) = writer.send(event).await {
-                break; // An error usually (TODO: always?) means the client has disconnected
-            }
+    let stream = async_stream::stream! {
+        while let Some(event) = subscription.next().await {
+            yield event;
         }
-    })
+    };
+
+    sse::from_stream(stream)
 }
 
 #[post("/join_room/<room>/<user_id>")]
