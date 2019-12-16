@@ -15,10 +15,17 @@ type UsersToRooms = HashMap<String, HashSet<String>>;
 type RoomsToUsers = HashMap<String, HashSet<String>>;
 type UsersToSubscriptions = HashMap<String, mpsc::Sender<Event>>;
 
+use tokio::sync::mpsc::error::SendError;
+use core::fmt::Debug;
+
+// Replace String with Arc<str> and make cloning a simple atomic increment since don't mutate the strings afterwards?
+// Wrapping Room with a future aware mutex instead of using a channel?
+
 pub struct Rooms {
     tx: mpsc::Sender<Command>
 }
 
+#[derive(Debug)]
 enum Command {
     Subscribe { user: String, tx: mpsc::Sender<Event> },
     Join { user: String, room: String },
@@ -42,29 +49,29 @@ impl Rooms {
     pub async fn subscribe(&self, user: String) -> Subscription {
         let (tx, rx) = mpsc::channel(10);
 
-        self.tx.clone().send(Command::Subscribe { user, tx }).await;
+        self.tx.clone().send(Command::Subscribe { user, tx }).await.expect("Closed");
 
         Subscription(rx)
     }
 
     pub async fn join(&self, room: String, user: String) {
-        self.tx.clone().send(Command::Join { room, user }).await;
+        self.tx.clone().send(Command::Join { room, user }).await.expect("Closed");
     }
 
     pub async fn leave(&self, room: String, user: String) {
-        self.tx.clone().send(Command::Leave { room, user }).await;
+        self.tx.clone().send(Command::Leave { room, user }).await.expect("Closed");
     }
 
     pub async fn contains(&self, room: String, user: String, cb: Box<dyn FnOnce(bool) + Send + 'static>) {
-        self.tx.clone().send(Command::Contains { room, user, cb }).await;
+        self.tx.clone().send(Command::Contains { room, user, cb }).await.expect("Closed");
     }
 
     pub async fn send_room(&self, room: String, message: Event) {
-        self.tx.clone().send(Command::SendRoom { room, message }).await;
+        self.tx.clone().send(Command::SendRoom { room, message }).await.expect("Closed");
     }
 
     pub async fn send_user(&self, user: String, message: Event) {
-        self.tx.clone().send(Command::SendUser { user, message }).await;
+        self.tx.clone().send(Command::SendUser { user, message }).await.expect("Closed");
     }
     
     fn helper_subscribe(uts: &mut UsersToSubscriptions, user: String, tx: mpsc::Sender<Event>) {
@@ -75,8 +82,8 @@ impl Rooms {
         let users_set = rtu.entry(room.clone()).or_insert(HashSet::new());
         users_set.insert(user.clone());
 
-        let rooms_set = utr.entry(user.clone()).or_insert(HashSet::new());
-        rooms_set.insert(room.clone());
+        let rooms_set = utr.entry(user).or_insert(HashSet::new());
+        rooms_set.insert(room);
     }
 
     fn helper_leave(rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, room: String, user: String) {
@@ -109,7 +116,7 @@ impl Rooms {
             for user in room.iter() {
                 if let Some(sender) = uts.get_mut(user) {
                     if sender.send(message.clone()).await.is_err() {
-                        disconnects.push(user.clone());
+                        disconnects.push(user.to_string());
                     }
                 }
             }
