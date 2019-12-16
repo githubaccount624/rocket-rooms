@@ -61,9 +61,8 @@ async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomTy
 
     let formatted = format!("{}: {}", inner_form.from, inner_form.text);
 
-    if let Some(msg) = sse::Event::new(Some(room.clone()), formatted) {
-        rooms.send(room, msg).await;
-    }
+    let event = sse::Event::new(Some(room.clone()), formatted);
+    rooms.send_room(room, event).await;
 }
 
 #[tokio::main]

@@ -15,8 +15,8 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(event: Option<String>, data: String) -> Option<Self> {
-        Some(Self { serialized: Self::serialize(event, data) })
+    pub fn new(event: Option<String>, data: String) -> Self {
+        Self { serialized: Self::serialize(event, data) }
     }
 
     fn serialize(event: Option<String>, data: String) -> Vec<u8> {
