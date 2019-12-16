@@ -4,8 +4,6 @@ use futures::stream::Stream;
 
 use tokio::sync::mpsc;
 
-use std::hash::Hash;
-
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -15,8 +13,10 @@ type UsersToRooms = HashMap<String, HashSet<String>>;
 type RoomsToUsers = HashMap<String, HashSet<String>>;
 type UsersToSubscriptions = HashMap<String, mpsc::Sender<Event>>;
 
-use tokio::sync::mpsc::error::SendError;
 use core::fmt::Debug;
+
+use futures::channel::oneshot;
+use futures::future::FutureExt;
 
 // Replace String with Arc<str> and make cloning a simple atomic increment since don't mutate the strings afterwards?
 // Wrapping Room with a future aware mutex instead of using a channel?
@@ -30,7 +30,7 @@ enum Command {
     Subscribe { user: String, tx: mpsc::Sender<Event> },
     Join { user: String, room: String },
     Leave { user: String, room: String },
-    Contains { user: String, room: String, cb: Box<dyn FnOnce(bool) + Send + 'static> },
+    Contains { user: String, room: String, sender: oneshot::Sender<bool> },
     SendRoom { room: String, message: Event },
     SendUser { user: String, message: Event }
 }
@@ -62,8 +62,12 @@ impl Rooms {
         self.tx.clone().send(Command::Leave { room, user }).await.expect("Closed");
     }
 
-    pub async fn contains(&self, room: String, user: String, cb: Box<dyn FnOnce(bool) + Send + 'static>) {
-        self.tx.clone().send(Command::Contains { room, user, cb }).await.expect("Closed");
+    pub async fn contains(&self, room: String, user: String) -> bool {
+        let (sender, receiver) = oneshot::channel::<bool>();
+
+        self.tx.clone().send(Command::Contains { room, user, sender: sender }).await.expect("Closed");
+
+        receiver.map(|member| { return member }).await.unwrap_or(false)
     }
 
     pub async fn send_room(&self, room: String, message: Event) {
@@ -96,14 +100,14 @@ impl Rooms {
         }
     }
 
-    async fn helper_contains<'a>(rtu: &'a RoomsToUsers, room: String, user: String, cb: Box<dyn FnOnce(bool) + Send + 'static>) { 
+    async fn helper_contains<'a>(rtu: &'a RoomsToUsers, room: String, user: String, sender: oneshot::Sender<bool>) { 
         if let Some(room) = rtu.get(&room) {
-            cb(room.contains(&user));
+            sender.send(room.contains(&user));
             
             return;
         }
 
-        cb(false);
+        sender.send(false);
 
         // TODO: Should the above remove the client if they're disconnected?
         // Not sure how to do this other than sending a dummy message and seeing if it sent?
@@ -163,8 +167,8 @@ impl Rooms {
                 Command::Leave { room, user } => {
                     Self::helper_leave(&mut rtu, &mut utr, room, user);
                 }
-                Command::Contains { room, user, cb } => {
-                    Self::helper_contains(&rtu, room, user, cb).await;
+                Command::Contains { room, user, sender } => {
+                    Self::helper_contains(&rtu, room, user, sender).await;
                 }
                 Command::SendRoom { room, message } => {
                     Self::helper_send_room(&mut uts, &mut rtu, &mut utr, room, message).await;
