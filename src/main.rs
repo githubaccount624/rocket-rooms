@@ -63,8 +63,11 @@ async fn post_message(room: String, form: Form<Message>, rooms: State<'_, Rooms>
 
 #[tokio::main]
 async fn main() {
+    let rooms = Rooms::new();
+    rooms.spawn_heartbeat_task(60).await;
+
     rocket::ignite()
-        .manage(Rooms::new())
+        .manage(rooms)
         .mount("/", routes![index, room_stream, join_room, post_message])
         .serve().await
         .expect("server quit unexpectedly")

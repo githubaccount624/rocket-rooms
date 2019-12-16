@@ -3,7 +3,9 @@ use std::task::{Context, Poll};
 use futures::stream::Stream;
 
 use tokio::sync::mpsc;
+use tokio::time;
 
+use std::time::Duration;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -33,7 +35,8 @@ enum Command {
     Leave { user: String, room: String },
     Contains { user: String, room: String, sender: oneshot::Sender<bool> },
     SendRoom { room: String, message: Event },
-    SendUser { user: String, message: Event }
+    SendUser { user: String, message: Event },
+    SendHeartbeat
 }
 
 pub struct Subscription(mpsc::Receiver<Event>);
@@ -42,9 +45,13 @@ const TASK_SHUTDOWN_ERROR_MESSAGE: &'static str = "Permanent background task was
 
 impl Rooms {
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel(1024); // what number?
+        let (tx, rx) = mpsc::channel(1024); // what number? unbounded?
         tokio::spawn(Self::background_task(rx));
         Rooms { tx }
+    }
+
+    pub async fn spawn_heartbeat_task(&self, heartbeat_interval_secs: u64) {
+        tokio::spawn(Self::heartbeat_task(self.tx.clone(), heartbeat_interval_secs));
     }
 
     pub async fn subscribe(&self, user: String) -> Subscription {
@@ -140,6 +147,22 @@ impl Rooms {
         }
     }
 
+    async fn helper_send_heartbeat(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms) {
+        let mut disconnects = vec![];
+
+        let heartbeat_message = Event::new(None, "\n\n".to_string());
+
+        for (user, sender) in uts.iter_mut() {
+            if sender.send(heartbeat_message.clone()).await.is_err() {
+                disconnects.push(user.to_string());
+            }
+        }
+
+        for user in disconnects {
+            Self::clean_up_user(uts, rtu, utr, user);
+        }
+    }
+
     fn clean_up_user(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, user: String) {
         uts.remove(&user);
 
@@ -149,6 +172,16 @@ impl Rooms {
                     the_room.remove(&user);
                 }
             }
+        }
+    }
+
+    async fn heartbeat_task(mut tx: mpsc::Sender<Command>, heartbeat_interval_secs: u64) {
+        let mut interval = time::interval(Duration::from_secs(heartbeat_interval_secs));
+
+        loop {
+            tx.send(Command::SendHeartbeat).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    
+            interval.tick().await;
         }
     }
 
@@ -176,6 +209,9 @@ impl Rooms {
                 }
                 Command::SendUser { user, message } => {
                     Self::helper_send_user(&mut uts, &mut rtu, &mut utr, user, message).await;
+                }
+                Command::SendHeartbeat => {
+                    Self::helper_send_heartbeat(&mut uts, &mut rtu, &mut utr).await;
                 }
             }
         }
