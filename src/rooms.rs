@@ -37,7 +37,7 @@ enum Command {
 
 pub struct Subscription(mpsc::Receiver<Event>);
 
-// const TASK_SHUTDOWN_ERROR_MESSAGE = "permanent background task was shut down unexpectedly"
+const TASK_SHUTDOWN_ERROR_MESSAGE: &'static str = "Permanent background task was shut down unexpectedly";
 
 impl Rooms {
     pub fn new() -> Self {
@@ -49,33 +49,33 @@ impl Rooms {
     pub async fn subscribe(&self, user: String) -> Subscription {
         let (tx, rx) = mpsc::channel(10);
 
-        self.tx.clone().send(Command::Subscribe { user, tx }).await.expect("Closed");
+        self.tx.clone().send(Command::Subscribe { user, tx }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
 
         Subscription(rx)
     }
 
     pub async fn join(&self, room: String, user: String) {
-        self.tx.clone().send(Command::Join { room, user }).await.expect("Closed");
+        self.tx.clone().send(Command::Join { room, user }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
     pub async fn leave(&self, room: String, user: String) {
-        self.tx.clone().send(Command::Leave { room, user }).await.expect("Closed");
+        self.tx.clone().send(Command::Leave { room, user }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
     pub async fn contains(&self, room: String, user: String) -> bool {
         let (sender, receiver) = oneshot::channel::<bool>();
 
-        self.tx.clone().send(Command::Contains { room, user, sender: sender }).await.expect("Closed");
+        self.tx.clone().send(Command::Contains { room, user, sender }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
 
         receiver.map(|member| { return member }).await.unwrap_or(false)
     }
 
     pub async fn send_room(&self, room: String, message: Event) {
-        self.tx.clone().send(Command::SendRoom { room, message }).await.expect("Closed");
+        self.tx.clone().send(Command::SendRoom { room, message }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
     pub async fn send_user(&self, user: String, message: Event) {
-        self.tx.clone().send(Command::SendUser { user, message }).await.expect("Closed");
+        self.tx.clone().send(Command::SendUser { user, message }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
     
     fn helper_subscribe(uts: &mut UsersToSubscriptions, user: String, tx: mpsc::Sender<Event>) {
