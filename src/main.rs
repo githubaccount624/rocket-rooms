@@ -25,8 +25,6 @@ fn index() -> NamedFile {
     NamedFile::open("index.html").expect("index.html")
 }
 
-// Can also use SocketAddr for key instead of i32 user id
-
 #[get("/sse/<user_id>")]
 async fn room_stream(user_id: i32, rooms: State<'_, Rooms>) -> sse::SSE<impl Stream<Item = sse::Event>> {
     let mut subscription = rooms.subscribe(user_id.to_string()).await;

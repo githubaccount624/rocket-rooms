@@ -1,9 +1,3 @@
-# rocket-rooms
-
-A simplistic chat room app, demoing a possible design for SSE in async Rocket.
-
-<a href="https://www.jebrosen.com/static/rocket-rooms_demo2.mp4">Video Demo</a>
-
 ## Compiling
 
 rocket-rooms uses Rocket's async branch, and therefore

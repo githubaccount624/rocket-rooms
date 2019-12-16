@@ -1,8 +1,12 @@
 [package]
 name = "rocket-rooms"
 version = "0.1.0"
-authors = ["Jeb Rosen <jeb@jebrosen.com>"]
+authors = ["John Smith"]
 edition = "2018"
+description = "Server-side server sent events rooms implementation"
+repository = "https://github.com/githubaccount624/sse-rooms"
+license = "MIT/Apache-2.0"
+keywords = ["rocket", "sse", "server-sent-events", "rooms", "web", "server"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

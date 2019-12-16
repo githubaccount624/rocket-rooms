@@ -18,6 +18,7 @@ use core::fmt::Debug;
 use futures::channel::oneshot;
 use futures::future::FutureExt;
 
+// Possible Ideas:
 // Replace String with Arc<str> and make cloning a simple atomic increment since don't mutate the strings afterwards?
 // Wrapping Room with a future aware mutex instead of using a channel?
 
@@ -67,7 +68,7 @@ impl Rooms {
 
         self.tx.clone().send(Command::Contains { room, user, sender }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
 
-        receiver.map(|member| { return member }).await.unwrap_or(false)
+        receiver.map(|member| { return member }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE)
     }
 
     pub async fn send_room(&self, room: String, message: Event) {
@@ -102,12 +103,12 @@ impl Rooms {
 
     async fn helper_contains(rtu: &RoomsToUsers, room: String, user: String, sender: oneshot::Sender<bool>) { 
         if let Some(room) = rtu.get(&room) {
-            sender.send(room.contains(&user));
+            sender.send(room.contains(&user)).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
             
             return;
         }
 
-        sender.send(false);
+        sender.send(false).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
 
         // TODO: Should the above remove the client if they're disconnected?
         // Not sure how to do this other than sending a dummy message and seeing if it sent?
