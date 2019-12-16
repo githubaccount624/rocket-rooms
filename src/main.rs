@@ -27,11 +27,9 @@ fn index() -> NamedFile {
 
 // Can also use SocketAddr for key instead of i32 user id
 
-type RoomType = Rooms<String, i32>;
-
 #[get("/sse/<user_id>")]
-async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE<impl Stream<Item = sse::Event>> {
-    let mut subscription = rooms.subscribe(user_id).await;
+async fn room_stream(user_id: i32, rooms: State<'_, Rooms>) -> sse::SSE<impl Stream<Item = sse::Event>> {
+    let mut subscription = rooms.subscribe(user_id.to_string()).await;
 
     let stream = async_stream::stream! {
         while let Some(event) = subscription.next().await {
@@ -43,20 +41,20 @@ async fn room_stream(user_id: i32, rooms: State<'_, RoomType>) -> sse::SSE<impl 
 }
 
 #[post("/join_room/<room>/<user_id>")]
-async fn join_room(room: String, user_id: i32, rooms: State<'_, RoomType>) {
-    rooms.contains(room.clone(), user_id, Box::new(|member| { 
+async fn join_room(room: String, user_id: i32, rooms: State<'_, Rooms>) {
+    rooms.contains(room.clone(), user_id.to_string(), Box::new(|member| { 
         println!("member: {}", member);
     })).await;
 
-    rooms.join(room.clone(), user_id).await;
+    rooms.join(room.clone(), user_id.to_string()).await;
 
-    rooms.contains(room, user_id, Box::new(|member| { 
+    rooms.contains(room, user_id.to_string(), Box::new(|member| { 
         println!("member: {}", member);
     })).await;
 }
 
 #[post("/room/<room>", data="<form>")]
-async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomType>) {
+async fn post_message(room: String, form: Form<Message>, rooms: State<'_, Rooms>) {
     let inner_form = form.into_inner();
 
     let formatted = format!("{}: {}", inner_form.from, inner_form.text);
@@ -68,7 +66,7 @@ async fn post_message(room: String, form: Form<Message>, rooms: State<'_, RoomTy
 #[tokio::main]
 async fn main() {
     rocket::ignite()
-        .manage(RoomType::new())
+        .manage(Rooms::new())
         .mount("/", routes![index, room_stream, join_room, post_message])
         .serve().await
         .expect("server quit unexpectedly")
