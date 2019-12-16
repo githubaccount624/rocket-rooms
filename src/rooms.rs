@@ -100,7 +100,7 @@ impl Rooms {
         }
     }
 
-    async fn helper_contains<'a>(rtu: &'a RoomsToUsers, room: String, user: String, sender: oneshot::Sender<bool>) { 
+    async fn helper_contains(rtu: &RoomsToUsers, room: String, user: String, sender: oneshot::Sender<bool>) { 
         if let Some(room) = rtu.get(&room) {
             sender.send(room.contains(&user));
             
