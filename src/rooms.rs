@@ -116,9 +116,6 @@ impl Rooms {
         }
 
         sender.send(false).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
-
-        // TODO: Should the above remove the client if they're disconnected?
-        // Not sure how to do this other than sending a dummy message and seeing if it sent?
     }
 
     async fn helper_send_room(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, room: String, message: Event) { 
