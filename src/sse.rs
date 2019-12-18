@@ -40,10 +40,18 @@ impl Event {
     }
 }
 
-pub struct SSE<S>(S);
+pin_project_lite::pin_project! {
+    /// An SSE stream. This type implements `Responder`; see the
+    /// [`from_stream`] function for a usage example.
+    pub struct SSE<S> {
+        #[pin]
+        stream: S,
+        state: State,
+    }
+}
 
 pub fn from_stream<S: Stream<Item=Event>>(stream: S) -> SSE<S> {
-    SSE(stream)
+    SSE { stream, state: State::Pending }
 }
 
 impl<'r, S: Stream<Item=Event> + Send + 'r> Responder<'r> for SSE<S> {
@@ -52,18 +60,11 @@ impl<'r, S: Stream<Item=Event> + Send + 'r> Responder<'r> for SSE<S> {
             Response::build()
                 .raw_header("Content-Type", "text/event-stream")
                 .raw_header("Cache-Control", "no-transform") // no-cache
+                .raw_header("Expires", "0")
                 .raw_header("Connection", "keep-alive")
-                .streamed_body(SSEReader { stream: self.0, state: State::Pending })
+                .streamed_body(self)
                 .ok()
         })
-    }
-}
-
-pin_project_lite::pin_project! {
-    struct SSEReader<S> {
-        #[pin]
-        stream: S,
-        state: State,
     }
 }
 
@@ -73,7 +74,7 @@ enum State {
     Done,
 }
 
-impl<S: Stream<Item=Event>> AsyncRead for SSEReader<S> {
+impl<S: Stream<Item=Event>> AsyncRead for SSE<S> {
     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize, io::Error>> {
         let mut this = self.project();
 
@@ -82,7 +83,7 @@ impl<S: Stream<Item=Event>> AsyncRead for SSEReader<S> {
         }
 
         loop {
-            match &mut this.state {
+            match this.state {
                 State::Pending => {
                     // Get the next buffer
                     match this.stream.as_mut().poll_next(cx) {
