@@ -150,7 +150,7 @@ impl Rooms {
         let heartbeat_message = Event::new(None, "\n\n".to_string());
 
         for (user, sender) in uts.iter_mut() {
-            if sender.send(heartbeat_message.clone()).await.is_err() {
+            if sender.try_send(heartbeat_message.clone()).is_err() {
                 disconnects.push(user.to_string());
             }
         }
