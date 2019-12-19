@@ -138,7 +138,7 @@ impl Rooms {
 
     async fn helper_send_user(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, user: String, message: Event) { 
         if let Some(sender) = uts.get_mut(&user) {
-            if sender.send(message.clone()).await.is_err() {
+            if sender.try_send(message.clone()).is_err() {
                 Self::clean_up_user(uts, rtu, utr, user);
             }
         }
