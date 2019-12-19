@@ -50,12 +50,8 @@ impl Rooms {
         Rooms { tx }
     }
 
-    pub async fn spawn_heartbeat_task(&self, heartbeat_interval_secs: u64) {
-        tokio::spawn(Self::heartbeat_task(self.tx.clone(), heartbeat_interval_secs));
-    }
-
     pub async fn subscribe(&self, user: String) -> Subscription {
-        let (tx, rx) = mpsc::channel(10);
+        let (tx, rx) = mpsc::channel(128);
 
         self.tx.clone().send(Command::Subscribe { user, tx }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
 
@@ -84,6 +80,10 @@ impl Rooms {
 
     pub async fn send_user(&self, user: String, message: Event) {
         self.tx.clone().send(Command::SendUser { user, message }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    }
+
+    pub async fn spawn_heartbeat_task(&self, heartbeat_interval_secs: u64) {
+        tokio::spawn(Self::heartbeat_task(self.tx.clone(), heartbeat_interval_secs));
     }
     
     fn helper_subscribe(uts: &mut UsersToSubscriptions, user: String, tx: mpsc::Sender<Event>) {
@@ -116,9 +116,6 @@ impl Rooms {
         }
 
         sender.send(false).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
-
-        // TODO: Should the above remove the client if they're disconnected?
-        // Not sure how to do this other than sending a dummy message and seeing if it sent?
     }
 
     async fn helper_send_room(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, room: String, message: Event) { 
@@ -127,7 +124,7 @@ impl Rooms {
         if let Some(room) = rtu.get(&room) {
             for user in room.iter() {
                 if let Some(sender) = uts.get_mut(user) {
-                    if sender.send(message.clone()).await.is_err() {
+                    if sender.try_send(message.clone()).is_err() {
                         disconnects.push(user.to_string());
                     }
                 }
