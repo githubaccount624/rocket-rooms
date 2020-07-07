@@ -11,31 +11,55 @@ use std::collections::HashSet;
 
 use crate::sse::Event;
 
-type UsersToRooms = HashMap<String, HashSet<String>>;
-type RoomsToUsers = HashMap<String, HashSet<String>>;
-type UsersToSubscriptions = HashMap<String, mpsc::Sender<Event>>;
-
 use core::fmt::Debug;
 
 use futures::channel::oneshot;
 use futures::future::FutureExt;
 
+struct Mappings {
+    user_to_subs: HashMap<i32, HashSet<String>>,
+    room_to_subs: HashMap<String, HashSet<String>>,
+    sub_to_client: HashMap<String, Client>,
+    sub_to_log: HashMap<String, Vec<u64>>,
+    id_to_event: HashMap<u64, Event>
+}
+
+/*
+type UserToSubs = HashMap<i32, HashSet<String>>;
+type RoomToSubs = HashMap<String, HashSet<String>>;
+type SubToClient = HashMap<String, Client>;
+// type SubToLog = HashMap<String, u64>;
+*/
+
+// try_send will either succeed immediately, and the client will get the event "eventually". Or it will fail, because events are being queued faster than they can be sent to the client, or because the client has disconnected
+
+pub struct Client {
+    sender: mpsc::Sender<Event>,
+    rooms: HashSet<String>
+}
+
 // Possible Ideas:
 // Replace String with Arc<str> and make cloning a simple atomic increment since don't mutate the strings afterwards?
 // Wrapping Room with a future aware mutex instead of using a channel?
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 pub struct Rooms {
-    tx: mpsc::Sender<Command>
+    tx: mpsc::Sender<Command>,
+    last_generated_id: AtomicU64
 }
 
 #[derive(Debug)]
 enum Command {
-    Subscribe { user: String, tx: mpsc::Sender<Event> },
-    Join { user: String, room: String },
-    Leave { user: String, room: String },
-    Contains { user: String, room: String, sender: oneshot::Sender<bool> },
-    SendRoom { room: String, message: Event },
-    SendUser { user: String, message: Event },
+    Subscribe { sub: String, user_id: Option<i32>, tx: mpsc::Sender<Event> },
+    Join { sub: String, room: String },
+    JoinUser { user_id: i32, room: String },
+    RoomJoinRoom { current_room: String, new_room: String },
+    Leave { sub: String, room: String },
+    Contains { sub: String, room: String, sender: oneshot::Sender<bool> },
+    SendRoom { room: String, event: Event },
+    SendUser { user_id: i32, event: Event },
+    SendMissingEvents { sub: String, last_event_id: u64 },
     SendHeartbeat
 }
 
@@ -45,72 +69,121 @@ const TASK_SHUTDOWN_ERROR_MESSAGE: &'static str = "Permanent background task was
 
 impl Rooms {
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel(1024); // what number? unbounded?
+        let (tx, rx) = mpsc::channel(1024);
         tokio::spawn(Self::background_task(rx));
-        Rooms { tx }
+        Rooms { tx, last_generated_id: AtomicU64::new(1) }
     }
 
-    pub async fn subscribe(&self, user: String) -> Subscription {
+    pub fn create_event(&self, event: &str, data: String) -> Event {
+        let id = self.last_generated_id.fetch_add(1, Ordering::SeqCst);
+
+        Event::new(event, data, id)
+    }
+
+    pub async fn subscribe(&self, sub: String, user_id: Option<i32>) -> Subscription {
         let (tx, rx) = mpsc::channel(128);
 
-        self.tx.clone().send(Command::Subscribe { user, tx }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.tx.clone().send(Command::Subscribe { sub, user_id, tx }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
 
         Subscription(rx)
     }
 
-    pub async fn join(&self, room: String, user: String) {
-        self.tx.clone().send(Command::Join { room, user }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    pub async fn join(&self, room: String, sub: String) {
+        self.tx.clone().send(Command::Join { room, sub }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
-    pub async fn leave(&self, room: String, user: String) {
-        self.tx.clone().send(Command::Leave { room, user }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    pub async fn join_user(&self, room: String, user_id: i32) {
+        self.tx.clone().send(Command::JoinUser { room, user_id }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
-    pub async fn contains(&self, room: String, user: String) -> bool {
+    pub async fn room_join_room(&self, current_room: String, new_room: String) {
+        self.tx.clone().send(Command::RoomJoinRoom { current_room, new_room }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    }
+
+    pub async fn leave(&self, room: String, sub: String) {
+        self.tx.clone().send(Command::Leave { room, sub }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    }
+
+    pub async fn contains(&self, room: String, sub: String) -> bool {
         let (sender, receiver) = oneshot::channel::<bool>();
 
-        self.tx.clone().send(Command::Contains { room, user, sender }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.tx.clone().send(Command::Contains { room, sub, sender }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
 
         receiver.map(|member| { return member }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE)
     }
 
-    pub async fn send_room(&self, room: String, message: Event) {
-        self.tx.clone().send(Command::SendRoom { room, message }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    pub async fn send_room(&self, room: String, event: Event) {
+        self.tx.clone().send(Command::SendRoom { room, event }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
-    pub async fn send_user(&self, user: String, message: Event) {
-        self.tx.clone().send(Command::SendUser { user, message }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    pub async fn send_user(&self, user_id: i32, event: Event) {
+        self.tx.clone().send(Command::SendUser { user_id, event }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    }
+
+    pub async fn send_missing_events(&self, sub: String, last_event_id: u64) {
+        self.tx.clone().send(Command::SendMissingEvents { sub, last_event_id }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
     pub async fn spawn_heartbeat_task(&self, heartbeat_interval_secs: u64) {
         tokio::spawn(Self::heartbeat_task(self.tx.clone(), heartbeat_interval_secs));
     }
     
-    fn helper_subscribe(uts: &mut UsersToSubscriptions, user: String, tx: mpsc::Sender<Event>) {
-        uts.insert(user.clone(), tx);
-    }
+    fn helper_subscribe(mappings: &mut Mappings, sub: String, user_id: Option<i32>, tx: mpsc::Sender<Event>) {
+        if let Some(user_id) = user_id {
+            let mut subs = HashSet::new();
+            subs.insert(sub.clone());
 
-    fn helper_join(rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, room: String, user: String) {
-        let users_set = rtu.entry(room.clone()).or_insert(HashSet::new());
-        users_set.insert(user.clone());
-
-        let rooms_set = utr.entry(user).or_insert(HashSet::new());
-        rooms_set.insert(room);
-    }
-
-    fn helper_leave(rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, room: String, user: String) {
-        if let Some(users_set) = rtu.get_mut(&room) {
-            users_set.remove(&user);
+            mappings.user_to_subs.insert(user_id, subs);
         }
 
-        if let Some(rooms_set) = utr.get_mut(&user) {
-            rooms_set.remove(&room);
+        mappings.sub_to_client.insert(sub, Client { sender: tx, rooms: HashSet::new() });
+    }
+
+    fn helper_join(mappings: &mut Mappings, room: String, sub: String) {
+        let subs = mappings.room_to_subs.entry(room.clone()).or_insert(HashSet::new());
+        subs.insert(sub.clone());
+
+        if let Some(client) = mappings.sub_to_client.get_mut(&sub) {
+            client.rooms.insert(room);
         }
     }
 
-    async fn helper_contains(rtu: &RoomsToUsers, room: String, user: String, sender: oneshot::Sender<bool>) { 
-        if let Some(room) = rtu.get(&room) {
-            sender.send(room.contains(&user)).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+    fn helper_room_join_room(mappings: &mut Mappings, current_room: String, new_room: String) {
+        if let Some(subs) = mappings.room_to_subs.get(&current_room) {
+            let cloned = subs.clone();
+
+            for sub in cloned {
+                Self::helper_join(mappings, new_room.clone(), sub);
+            }
+        }
+    }
+
+    fn helper_join_user(mappings: &mut Mappings, room: String, user_id: i32) {
+        if let Some(subs) = mappings.user_to_subs.get_mut(&user_id) {
+            for sub in subs.iter() {
+                if let Some(client) = mappings.sub_to_client.get_mut(sub) {
+                    client.rooms.insert(room.clone());
+                }
+
+                let room_subs = mappings.room_to_subs.entry(room.clone()).or_insert(HashSet::new());
+                room_subs.insert(sub.clone());
+            }
+        }
+    }
+
+    fn helper_leave(mappings: &mut Mappings, room: String, sub: String) {
+        if let Some(subs) = mappings.room_to_subs.get_mut(&room) {
+            subs.remove(&sub);
+        }
+
+        if let Some(client) = mappings.sub_to_client.get_mut(&sub) {
+            client.rooms.remove(&room);
+        }
+    }
+
+    async fn helper_contains(mappings: &mut Mappings, room: String, sub: String, sender: oneshot::Sender<bool>) { 
+        if let Some(subs) = mappings.room_to_subs.get(&room) {
+            sender.send(subs.contains(&sub)).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
             
             return;
         }
@@ -118,55 +191,102 @@ impl Rooms {
         sender.send(false).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
-    async fn helper_send_room(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, room: String, message: Event) { 
+    fn send_client_message(sub_to_log: &mut HashMap<String, Vec<u64>>, id_to_event: &mut HashMap<u64, Event>, sub: String, client: &mut Client, event: Event) -> bool {
+        let log = sub_to_log.entry(sub).or_insert(Vec::new());
+        log.push(event.id);
+
+        if id_to_event.get(&event.id).is_none() {
+            id_to_event.insert(event.id, event.clone());
+        }
+
+        !client.sender.try_send(event).is_err()
+    }
+
+    async fn helper_send_room(mappings: &mut Mappings, room: String, event: Event) { 
         let mut disconnects = vec![];
         
-        if let Some(room) = rtu.get(&room) {
-            for user in room.iter() {
-                if let Some(sender) = uts.get_mut(user) {
-                    if sender.try_send(message.clone()).is_err() {
-                        disconnects.push(user.to_string());
+        if let Some(subs) = mappings.room_to_subs.get(&room) {
+            for sub in subs.iter() {
+                if let Some(mut client) = mappings.sub_to_client.get_mut(sub) {
+                    println!("sending a message to this client {} to this room {}", sub, room);
+
+                    if Self::send_client_message(&mut mappings.sub_to_log, &mut mappings.id_to_event, sub.clone(), &mut client, event.clone()) == false {
+                        disconnects.push(sub.to_string());
                     }
                 }
             }
         }
 
-        for user in disconnects {
-            Self::clean_up_user(uts, rtu, utr, user);
+        for sub in disconnects {
+            Self::clean_up_user(mappings, sub);
         }
     }
 
-    async fn helper_send_user(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, user: String, message: Event) { 
-        if let Some(sender) = uts.get_mut(&user) {
-            if sender.try_send(message.clone()).is_err() {
-                Self::clean_up_user(uts, rtu, utr, user);
-            }
-        }
-    }
-
-    async fn helper_send_heartbeat(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms) {
+    async fn helper_send_user(mappings: &mut Mappings, user_id: i32, event: Event) { 
         let mut disconnects = vec![];
 
-        let heartbeat_message = Event::new(None, "\n\n".to_string());
-
-        for (user, sender) in uts.iter_mut() {
-            if sender.try_send(heartbeat_message.clone()).is_err() {
-                disconnects.push(user.to_string());
+        if let Some(subs) = mappings.user_to_subs.get_mut(&user_id) {
+            for sub in subs.iter() {
+                if let Some(mut client) = mappings.sub_to_client.get_mut(sub) {
+                    if Self::send_client_message(&mut mappings.sub_to_log, &mut mappings.id_to_event, sub.clone(), &mut client, event.clone()) == false {
+                        disconnects.push(sub.to_string());
+                    }
+                }
             }
         }
 
-        for user in disconnects {
-            Self::clean_up_user(uts, rtu, utr, user);
+        for sub in disconnects {
+            Self::clean_up_user(mappings, sub);
         }
     }
 
-    fn clean_up_user(uts: &mut UsersToSubscriptions, rtu: &mut RoomsToUsers, utr: &mut UsersToRooms, user: String) {
-        uts.remove(&user);
+    async fn helper_send_missing_events(mappings: &mut Mappings, sub: String, last_event_id: u64) {
+        if let Some(client) = mappings.sub_to_client.get_mut(&sub) {
+            if let Some(log) = mappings.sub_to_log.get(&sub) {
+                for id in log {
+                    if *id > last_event_id { // change to binary search?
+                        if let Some(event) = mappings.id_to_event.get(id) {
+                            if client.sender.try_send(event.clone()).is_err() {
+                                // delete?
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-        if let Some(member_rooms) = utr.remove(&user) {
-            for r in member_rooms.iter() {
-                if let Some(the_room) = rtu.get_mut(r) {
-                    the_room.remove(&user);
+    async fn helper_send_heartbeat(mappings: &mut Mappings) {
+        let mut disconnects = vec![];
+
+        let heartbeat_message = Event::new("hb", "\n\n".to_string(), 0); // change from hb to empty message
+
+        for (sub, client) in mappings.sub_to_client.iter_mut() {
+            if client.sender.try_send(heartbeat_message.clone()).is_err() {
+                disconnects.push(sub.to_string());
+            }
+        }
+
+        for sub in disconnects {
+            Self::clean_up_user(mappings, sub);
+        }
+    }
+
+    fn clean_up_user(mappings: &mut Mappings, sub: String) {
+        let splitted: Vec<_> = sub.split("-").collect();
+
+        if splitted.len() > 0 {
+            let user_id = splitted[0].parse::<i32>().unwrap();
+
+            if let Some(subs) = mappings.user_to_subs.get_mut(&user_id) {
+                subs.remove(&sub);
+            }
+        }
+
+        if let Some(client) = mappings.sub_to_client.remove(&sub) {
+            for room in client.rooms.iter() {
+                if let Some(subs) = mappings.room_to_subs.get_mut(room) {
+                    subs.remove(&sub);
                 }
             }
         }
@@ -183,32 +303,45 @@ impl Rooms {
     }
 
     async fn background_task(mut rx: mpsc::Receiver<Command>) {
-        let mut utr: UsersToRooms = HashMap::new();
-        let mut rtu: RoomsToUsers = HashMap::new();
-        let mut uts: UsersToSubscriptions = HashMap::new();
+        let mut mappings = Mappings {
+            user_to_subs: HashMap::new(),
+            room_to_subs: HashMap::new(),
+            sub_to_client: HashMap::new(),
+            sub_to_log: HashMap::new(),
+            id_to_event: HashMap::new()
+        };
 
         while let Some(command) = rx.recv().await {
             match command {
-                Command::Subscribe { user, tx } => {
-                    Self::helper_subscribe(&mut uts, user, tx);
+                Command::Subscribe { sub, user_id, tx } => {
+                    Self::helper_subscribe(&mut mappings, sub, user_id, tx);
                 }
-                Command::Join { room, user } => {
-                    Self::helper_join(&mut rtu, &mut utr, room, user);
+                Command::Join { room, sub } => {
+                    Self::helper_join(&mut mappings, room, sub);
                 }
-                Command::Leave { room, user } => {
-                    Self::helper_leave(&mut rtu, &mut utr, room, user);
+                Command::JoinUser { room, user_id } => {
+                    Self::helper_join_user(&mut mappings, room, user_id);
                 }
-                Command::Contains { room, user, sender } => {
-                    Self::helper_contains(&rtu, room, user, sender).await;
+                Command::RoomJoinRoom { current_room, new_room } => {
+                    Self::helper_room_join_room(&mut mappings, current_room, new_room);
                 }
-                Command::SendRoom { room, message } => {
-                    Self::helper_send_room(&mut uts, &mut rtu, &mut utr, room, message).await;
+                Command::Leave { room, sub } => {
+                    Self::helper_leave(&mut mappings, room, sub);
                 }
-                Command::SendUser { user, message } => {
-                    Self::helper_send_user(&mut uts, &mut rtu, &mut utr, user, message).await;
+                Command::Contains { room, sub, sender } => {
+                    Self::helper_contains(&mut mappings, room, sub, sender).await;
+                }
+                Command::SendRoom { room, event } => {
+                    Self::helper_send_room(&mut mappings, room, event).await;
+                }
+                Command::SendUser { user_id, event } => {
+                    Self::helper_send_user(&mut mappings, user_id, event).await;
+                }
+                Command::SendMissingEvents { sub, last_event_id } => {
+                    Self::helper_send_missing_events(&mut mappings, sub, last_event_id).await;
                 }
                 Command::SendHeartbeat => {
-                    Self::helper_send_heartbeat(&mut uts, &mut rtu, &mut utr).await;
+                    Self::helper_send_heartbeat(&mut mappings).await;
                 }
             }
         }
