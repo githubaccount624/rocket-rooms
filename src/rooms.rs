@@ -27,6 +27,7 @@ struct Mappings {
 // try_send will either succeed immediately, and the client will get the event "eventually". Or it will fail, because events are being queued faster than they can be sent to the client, or because the client has disconnected
 
 pub struct Client {
+    consecutive_failures: u64,
     sender: mpsc::Sender<Event>,
     rooms: HashSet<String>
 }
@@ -59,6 +60,7 @@ enum Command {
 pub struct Subscription(mpsc::Receiver<Event>);
 
 const TASK_SHUTDOWN_ERROR_MESSAGE: &'static str = "Permanent background task was shut down unexpectedly";
+const FAILURE_LIMIT: u64 = 100; // increase?
 
 impl Rooms {
     pub fn new() -> Self {
@@ -129,7 +131,7 @@ impl Rooms {
             mappings.user_to_subs.insert(user_id, subs);
         }
 
-        mappings.sub_to_client.insert(sub, Client { sender: tx, rooms: HashSet::new() });
+        mappings.sub_to_client.insert(sub, Client { sender: tx, consecutive_failures: 0, rooms: HashSet::new() });
     }
 
     fn helper_join(mappings: &mut Mappings, room: String, sub: String) {
@@ -192,7 +194,15 @@ impl Rooms {
             id_to_event.insert(event.id, event.clone());
         }
 
-        !client.sender.try_send(event).is_err()
+        let failed_to_send = client.sender.try_send(event).is_err();
+
+        if failed_to_send {
+            client.consecutive_failures += 1;
+        } else {
+            client.consecutive_failures = 0;
+        }
+
+        client.consecutive_failures < FAILURE_LIMIT
     }
 
     async fn helper_send_room(mappings: &mut Mappings, room: String, event: Event) { 
@@ -203,7 +213,7 @@ impl Rooms {
                 if let Some(mut client) = mappings.sub_to_client.get_mut(sub) {
                     println!("sending a message to this client {} to this room {}", sub, room);
 
-                    if Self::send_client_message(&mut mappings.sub_to_log, &mut mappings.id_to_event, sub.clone(), &mut client, event.clone()) == false {
+                    if !Self::send_client_message(&mut mappings.sub_to_log, &mut mappings.id_to_event, sub.clone(), &mut client, event.clone()) {
                         disconnects.push(sub.to_string());
                     }
                 }
@@ -221,7 +231,7 @@ impl Rooms {
         if let Some(subs) = mappings.user_to_subs.get_mut(&user_id) {
             for sub in subs.iter() {
                 if let Some(mut client) = mappings.sub_to_client.get_mut(sub) {
-                    if Self::send_client_message(&mut mappings.sub_to_log, &mut mappings.id_to_event, sub.clone(), &mut client, event.clone()) == false {
+                    if !Self::send_client_message(&mut mappings.sub_to_log, &mut mappings.id_to_event, sub.clone(), &mut client, event.clone()) {
                         disconnects.push(sub.to_string());
                     }
                 }
@@ -256,7 +266,13 @@ impl Rooms {
 
         for (sub, client) in mappings.sub_to_client.iter_mut() {
             if client.sender.try_send(heartbeat_message.clone()).is_err() {
-                disconnects.push(sub.to_string());
+                client.consecutive_failures += 1;
+
+                if client.consecutive_failures > FAILURE_LIMIT { // refactor this to a shared function?
+                    disconnects.push(sub.to_string());
+                }
+            } else {
+                client.consecutive_failures = 0;
             }
         }
 
