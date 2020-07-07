@@ -24,13 +24,6 @@ struct Mappings {
     id_to_event: HashMap<u64, Event>
 }
 
-/*
-type UserToSubs = HashMap<i32, HashSet<String>>;
-type RoomToSubs = HashMap<String, HashSet<String>>;
-type SubToClient = HashMap<String, Client>;
-// type SubToLog = HashMap<String, u64>;
-*/
-
 // try_send will either succeed immediately, and the client will get the event "eventually". Or it will fail, because events are being queued faster than they can be sent to the client, or because the client has disconnected
 
 pub struct Client {
