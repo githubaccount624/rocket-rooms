@@ -10,9 +10,8 @@ use tokio::io::AsyncRead;
 
 #[derive(Clone, Debug)]
 pub struct Event {
-    pub serialized: Vec<u8>,
-    pub id: u64
-    // event, data, retry, and id fields?
+    pub id: u64,
+    pub serialized: Vec<u8>
 }
 
 impl Event {
@@ -21,11 +20,13 @@ impl Event {
     }
 
     fn serialize(event: &str, data: String, id: u64) -> Vec<u8> {
-        let mut vec = Vec::with_capacity(12); // minimum size for an SSE message
+        let mut vec = Vec::with_capacity(6); // minimum size for an SSE message
 
-        vec.extend(b"id: ");
-        vec.extend(id.to_string().as_bytes());
-        vec.extend(b"\n");
+        if id > 0 {
+            vec.extend(b"id: ");
+            vec.extend(id.to_string().as_bytes());
+            vec.extend(b"\n");
+        }
 
         if event.len() > 0 {
             vec.extend(b"event: ");
@@ -51,9 +52,8 @@ pub fn from_stream<S: Stream<Item=Event>>(stream: S) -> SSE<S> {
     SSE(stream)
 }
 
-#[rocket::async_trait]
-impl<'r, S: Stream<Item=Event> + Send + 'r> Responder<'r> for SSE<S> {
-    async fn respond_to(self, _req: &'r Request<'_>) -> rocket::response::Result<'r> {
+impl<'r, S: 'static + Stream<Item=Event> + Send + 'r> Responder<'r, 'static> for SSE<S> {
+    fn respond_to(self, _req: &'r Request<'_>) -> rocket::response::Result<'static> {
         Response::build()
             .raw_header("Content-Type", "text/event-stream")
             .raw_header("Cache-Control", "no-transform") // no-cache
