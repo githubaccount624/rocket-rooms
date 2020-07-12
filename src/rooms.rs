@@ -56,12 +56,12 @@ impl<T> VecDequeExt<T> for VecDeque<T> {
     }
 }
 
-fn search_event_log(event_log: &VecDeque<Event>, id: u64) -> Option<Event> {
+fn search_event_log(event_log: &VecDeque<Event>, id: u64) -> Option<&Event> {
     if let Some(e0) = event_log.get(0) {
         if let Some(idx) = id.checked_sub(e0.id) {
             if let Some(val) = event_log.get(idx as usize) {
                 if val.id == id {
-                    return Some(val.clone());
+                    return Some(&val);
                 }
             }
         }
@@ -294,7 +294,7 @@ impl Rooms {
 
                 if *id > last_event_id { // change to binary search?
                     if let Some(event) = search_event_log(&m.event_log, *id) {
-                        if client.sender.try_send(event).is_err() {
+                        if client.sender.try_send(event.clone()).is_err() {
                             // delete?
                         }
                     } else { // event not found in global log. refresh
