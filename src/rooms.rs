@@ -63,8 +63,8 @@ fn search_event_log(event_log: &VecDeque<Event>, id: u64) -> Option<Event> {
 				if val.id == id {
 					return Some(val.clone());
 				}
-    	    }
-	    }
+    	    		}
+	    	}
 	}
 	
 	return None;
