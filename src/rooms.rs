@@ -4,6 +4,7 @@ use futures::stream::Stream;
 
 use tokio::sync::mpsc;
 use tokio::time;
+use tokio::sync::mpsc::error::TrySendError;
 
 use std::time::Duration;
 use std::collections::HashMap;
@@ -25,6 +26,9 @@ struct Mappings {
     last_generated_id: u64
 }
 
+const TASK_SHUTDOWN_ERROR_MESSAGE: &'static str = "Permanent background task was shut down unexpectedly";
+
+const HEARTBEAT_FAILURE_LIMIT: u64 = 500;
 const MAX_EVENT_LOG_SIZE: usize = 10000;
 const MAX_CLIENT_LOG_SIZE: usize = 500;
 
@@ -39,7 +43,22 @@ pub struct Client {
     consecutive_heartbeat_failures: u64,
     sender: mpsc::Sender<Event>,
     log: VecDeque<u64>,
-    rooms: HashSet<String>
+    rooms: HashSet<String>,
+    disconnected: bool
+}
+
+impl Client {
+    fn try_send(&mut self, event: Event) -> bool {
+        if self.disconnected {
+            return false;
+        }
+
+        match self.sender.try_send(event) {
+            Err(TrySendError::Closed(_)) => { self.disconnected = true; return false; }
+            Err(TrySendError::Full(_)) => { return false; }
+            Ok(()) => { self.consecutive_heartbeat_failures = 0; return true; }
+        }
+    }
 }
 
 pub trait VecDequeExt<T> {
@@ -89,9 +108,6 @@ enum Command {
 }
 
 pub struct Subscription(mpsc::Receiver<Event>);
-
-const TASK_SHUTDOWN_ERROR_MESSAGE: &'static str = "Permanent background task was shut down unexpectedly";
-const HEARTBEAT_FAILURE_LIMIT: u64 = 500;
 
 impl Rooms {
     pub fn new() -> Self {
@@ -157,8 +173,17 @@ impl Rooms {
         if let Some(client) = m.sub_to_client.get_mut(&sub) {
             client.sender = tx;
             client.consecutive_heartbeat_failures = 0;
+            client.disconnected = false;
         } else {
-            m.sub_to_client.insert(sub, Client { sender: tx, log: VecDeque::new(), consecutive_heartbeat_failures: 0, rooms: HashSet::new() });
+            let new_client = Client {
+                sender: tx,
+                consecutive_heartbeat_failures: 0,
+                disconnected: false,
+                log: VecDeque::new(),
+                rooms: HashSet::new()
+            };
+
+            m.sub_to_client.insert(sub, new_client);
         }
     }
 
@@ -214,16 +239,10 @@ impl Rooms {
         sender.send(false).expect(TASK_SHUTDOWN_ERROR_MESSAGE);
     }
 
-    fn send_client_message(event_log: &mut VecDeque<Event>, sub: String, client: &mut Client, event: Event) -> bool {
+    fn send_logged_client_message(client: &mut Client, event: Event, event_log: &mut VecDeque<Event>) {
         client.log.push_drop(event.id, MAX_CLIENT_LOG_SIZE);
 
-        let sended_successfully = client.sender.try_send(event).is_ok();
-
-        if sended_successfully {
-            client.consecutive_heartbeat_failures = 0;
-        }
-
-        client.consecutive_heartbeat_failures < HEARTBEAT_FAILURE_LIMIT
+        client.try_send(event);
     }
 
     fn create_new_event(m: &mut Mappings, event: &str, data: String) -> Event {
@@ -236,56 +255,38 @@ impl Rooms {
     }
 
     async fn helper_send_room(m: &mut Mappings, room: String, event: &str, data: String) { 
-        let mut disconnects = vec![];
-
         let event = Self::create_new_event(m, event, data);
         
         if let Some(subs) = m.room_to_subs.get(&room) {
             for sub in subs.iter() {
                 if let Some(mut client) = m.sub_to_client.get_mut(sub) {
-                    if !Self::send_client_message(&mut m.event_log, sub.clone(), &mut client, event.clone()) {
-                        disconnects.push(sub.to_string());
-                    }
+                    Self::send_logged_client_message(&mut client, event.clone(), &mut m.event_log);
                 }
             }
-        }
-
-        for sub in disconnects {
-            Self::clean_up_user(m, sub);
         }
     }
 
     async fn helper_send_user(m: &mut Mappings, user_id: i32, event: &str, data: String) { 
-        let mut disconnects = vec![];
-
         let event = Self::create_new_event(m, event, data);
 
         if let Some(subs) = m.user_to_subs.get_mut(&user_id) {
             for sub in subs.iter() {
                 if let Some(mut client) = m.sub_to_client.get_mut(sub) {
-                    if !Self::send_client_message(&mut m.event_log, sub.clone(), &mut client, event.clone()) {
-                        disconnects.push(sub.to_string());
-                    }
+                    Self::send_logged_client_message(&mut client, event.clone(), &mut m.event_log);
                 }
             }
-        }
-
-        for sub in disconnects {
-            Self::clean_up_user(m, sub);
         }
     }
 
     fn send_refresh_event(client: &mut Client) {
         let refresh_event = Event::new("sse-refresh", "refresh".to_string(), 0);
 
-        if client.sender.try_send(refresh_event).is_err() {
-            // ?
-        }
+        client.try_send(refresh_event);
     }
 
     async fn helper_send_missing_events(m: &mut Mappings, sub: String, last_event_id: u64) {
         if let Some(client) = m.sub_to_client.get_mut(&sub) {
-            for id in &client.log {
+            for id in &client.log.clone() {
                 if client.log.len() >= MAX_CLIENT_LOG_SIZE && last_event_id < client.log[0] { // there's a gap in event log. refresh
                     Self::send_refresh_event(client);
 
@@ -294,9 +295,7 @@ impl Rooms {
 
                 if *id > last_event_id { // change to binary search?
                     if let Some(event) = search_event_log(&m.event_log, *id) {
-                        if client.sender.try_send(event.clone()).is_err() {
-                            // delete?
-                        }
+                        client.try_send(event.clone());
                     } else { // event not found in global log. refresh
                         Self::send_refresh_event(client);
 
@@ -313,14 +312,12 @@ impl Rooms {
         let heartbeat_message = Event::new("hb", "\n\n".to_string(), 0); // change from hb to empty message?
 
         for (sub, client) in m.sub_to_client.iter_mut() {
-            if client.sender.try_send(heartbeat_message.clone()).is_err() {
+            if !client.try_send(heartbeat_message.clone()) {
                 client.consecutive_heartbeat_failures += 1;
 
                 if client.consecutive_heartbeat_failures > HEARTBEAT_FAILURE_LIMIT {
                     disconnects.push(sub.to_string());
                 }
-            } else {
-                client.consecutive_heartbeat_failures = 0;
             }
         }
 
