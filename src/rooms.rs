@@ -116,48 +116,54 @@ impl Rooms {
         Rooms { tx }
     }
 
+    async fn send(&self, command: Command) {
+        if self.tx.clone().send(command).await.is_err() {
+            // do something?.. thinking emoji
+        }
+    }
+
     pub async fn subscribe(&self, sub: String, user_id: Option<i32>) -> Subscription {
         let (tx, rx) = mpsc::channel(128);
 
-        self.tx.clone().send(Command::Subscribe { sub, user_id, tx }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::Subscribe { sub, user_id, tx }).await;
 
         Subscription(rx)
     }
 
     pub async fn join(&self, room: String, sub: String) {
-        self.tx.clone().send(Command::Join { room, sub }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::Join { room, sub }).await;
     }
 
     pub async fn join_user(&self, room: String, user_id: i32) {
-        self.tx.clone().send(Command::JoinUser { room, user_id }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::JoinUser { room, user_id }).await;
     }
 
     pub async fn room_join_room(&self, current_room: String, new_room: String) {
-        self.tx.clone().send(Command::RoomJoinRoom { current_room, new_room }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::RoomJoinRoom { current_room, new_room }).await;
     }
 
     pub async fn leave(&self, room: String, sub: String) {
-        self.tx.clone().send(Command::Leave { room, sub }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::Leave { room, sub }).await;
     }
 
     pub async fn contains(&self, room: String, sub: String) -> bool {
         let (sender, receiver) = oneshot::channel::<bool>();
 
-        self.tx.clone().send(Command::Contains { room, sub, sender }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::Contains { room, sub, sender }).await;
 
         receiver.map(|member| { return member }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE)
     }
 
     pub async fn send_room(&self, room: String, event: &'static str, data: String) {
-        self.tx.clone().send(Command::SendRoom { room, event, data }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::SendRoom { room, event, data }).await;
     }
 
     pub async fn send_user(&self, user_id: i32, event: &'static str, data: String) {
-        self.tx.clone().send(Command::SendUser { user_id, event, data }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::SendUser { user_id, event, data }).await;
     }
 
     pub async fn send_missing_events(&self, sub: String, last_event_id: u64) {
-        self.tx.clone().send(Command::SendMissingEvents { sub, last_event_id }).await.expect(TASK_SHUTDOWN_ERROR_MESSAGE);
+        self.send(Command::SendMissingEvents { sub, last_event_id }).await;
     }
 
     pub async fn spawn_heartbeat_task(&self, heartbeat_interval_secs: u64) {
